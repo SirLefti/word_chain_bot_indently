@@ -758,6 +758,7 @@ The above entered word is **NOT** being taken into account.''')
             data = response.json()
             word: str = data[0]
             matches: list[str] = data[1]
+            # causes StopIteration if nothing matches
             _: str = next((match for match in matches if match.lower() == word.lower()))
 
             return word_chain_bot.API_RESPONSE_WORD_EXISTS
@@ -795,16 +796,17 @@ The above entered word is **NOT** being taken into account.''')
                     continue
 
                 data = response.json()
+                word: str = data[0]
+                matches: list[str] = data[1]
+                # causes StopIteration if nothing matches
+                _: str = next((match for match in matches if match.lower() == word.lower()))
 
-                word: str = data[0]  # The word that was searched
-                best_match: str = data[1][0]  # Should raise an IndexError if no match is returned
                 lang_code: str = (data[3][0]).split('//')[1].split('.')[0]
                 language: Language = Language.from_language_code(lang_code)
 
-                if best_match.lower() == word.lower():
-                    await word_chain_bot.add_to_cache(word, language, connection)
+                await word_chain_bot.add_to_cache(word, language, connection)
 
-            except (IndexError, TimeoutError, CancelledError, JSONDecodeError):
+            except (IndexError, TimeoutError, CancelledError, JSONDecodeError, StopIteration):
                 continue
 
     # ---------------------------------------------------------------------------------------------------------------
