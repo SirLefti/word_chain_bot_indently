@@ -50,7 +50,7 @@ class ServerConfigModel(Base):
 class WordCacheModel(Base):
     __tablename__ = 'word_cache'
     word: Mapped[str] = mapped_column(String, primary_key=True)
-    language: Mapped[str] = mapped_column(String, default='en')
+    language: Mapped[str] = mapped_column(String, primary_key=True, default='en')
 
 
 class UsedWordsModel(Base):
