@@ -763,10 +763,10 @@ The above entered word is **NOT** being taken into account.''')
 
             return word_chain_bot.API_RESPONSE_WORD_EXISTS
 
-        except TimeoutError:  # Send bot.API_RESPONSE_ERROR
-            logger.error('Timeout error raised when trying to get the query result.')
         except StopIteration:
             return word_chain_bot.API_RESPONSE_WORD_DOESNT_EXIST
+        except TimeoutError:  # Send bot.API_RESPONSE_ERROR
+            logger.error('Timeout error raised when trying to get the query result.')
         except Exception as ex:
             logger.error(f'An exception was raised while getting the query result:\n{ex}')
 
