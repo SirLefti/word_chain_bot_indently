@@ -33,6 +33,7 @@ async def main():
             if index % 100 == 0:
                 print(f'({(index/total_words):.2%}) {index}/{total_words}')
         await connection.commit()
+    print(f'finished importing {total_words} words')
 
 if __name__ == '__main__':
     asyncio.run(main())
