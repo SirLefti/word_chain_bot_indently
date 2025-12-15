@@ -71,7 +71,16 @@ class AdminCommandsCog(Cog, name=COG_NAME_ADMIN_CMDS):
 
         cache_config: ServerConfig | None = None
         db_config: ServerConfig | None = None
-        items: list[str] = []
+
+        guild = self.bot.get_guild(guild_id_as_number)
+
+        if guild is None:
+            await interaction.followup.send('Guild not found!')
+            return
+
+        items: list[str] = [
+            f'{guild.name} ({guild.id})'
+        ]
 
         try:
             cache_config = self.bot.server_configs[guild_id_as_number]
@@ -105,15 +114,17 @@ class AdminCommandsCog(Cog, name=COG_NAME_ADMIN_CMDS):
         # view message history
         # add reactions
         # use external emotes (?)
-        guild = self.bot.get_guild(guild_id_as_number)
         bot_member = guild.get_member(self.bot.user.id)
 
-        guild_permission_messages = [f'Can manage roles: {'✅' if bot_member.guild_permissions.manage_roles else '❌'}',
-                                     f'Can view channels: {'✅' if bot_member.guild_permissions.view_channel else '❌'}',
-                                     f'Can send messages: {'✅' if bot_member.guild_permissions.send_messages else '❌'}',
-                                     f'Can view message history: {'✅' if bot_member.guild_permissions.read_message_history else '❌'}',
-                                     f'Can add reactions: {'✅' if bot_member.guild_permissions.add_reactions else '❌'}',
-                                     f'Can use external emotes: {'✅' if bot_member.guild_permissions.use_external_emojis else '❌'}']
+        def permission_checks(permissions: Permissions) -> list[str]:
+            return [f'Can view channels: {'✅' if permissions.view_channel else '❌'}',
+                    f'Can send messages: {'✅' if permissions.send_messages else '❌'}',
+                    f'Can view message history: {'✅' if permissions.read_message_history else '❌'}',
+                    f'Can add reactions: {'✅' if permissions.add_reactions else '❌'}',
+                    f'Can use external emotes: {'✅' if permissions.use_external_emojis else '❌'}']
+
+        guild_permission_messages = ([f'Can manage roles: {'✅' if bot_member.guild_permissions.manage_roles else '❌'}']
+                                     + permission_checks(bot_member.guild_permissions))
 
         items.append('Guild permissions:\n' + '\n'.join(guild_permission_messages) + '\n')
 
@@ -125,7 +136,7 @@ class AdminCommandsCog(Cog, name=COG_NAME_ADMIN_CMDS):
         for game_mode in GameMode:
             game_state = config.game_state[game_mode]
             if game_state.channel_id is None:
-                items.append(f'Channel not set for {game_mode.name}')
+                items.append(f'Channel not set for {game_mode.name}\n')
                 continue
             try:
                 channel = guild.get_channel(game_state.channel_id)
@@ -135,12 +146,7 @@ class AdminCommandsCog(Cog, name=COG_NAME_ADMIN_CMDS):
             if channel is None:
                 items.append(f'Could not get channel by ID {game_state.channel_id}\n')
             else:
-                channel_permission_messages = [f'Can manage roles: {'✅' if channel.permissions_for(bot_member).manage_roles else '❌'}',
-                                               f'Can view channels: {'✅' if channel.permissions_for(bot_member).view_channel else '❌'}',
-                                               f'Can send messages: {'✅' if channel.permissions_for(bot_member).send_messages else '❌'}',
-                                               f'Can view message history: {'✅' if channel.permissions_for(bot_member).read_message_history else '❌'}',
-                                               f'Can add reactions: {'✅' if channel.permissions_for(bot_member).add_reactions else '❌'}',
-                                               f'Can use external emotes: {'✅' if channel.permissions_for(bot_member).use_external_emojis else '❌'}']
+                channel_permission_messages = permission_checks(channel.permissions_for(bot_member))
                 items.append(f'Channel permissions ({game_mode.name}):\n' + '\n'.join(channel_permission_messages) + '\n')
 
         await interaction.followup.send('\n'.join(items))
