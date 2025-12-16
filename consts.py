@@ -1,4 +1,5 @@
 from enum import Enum
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,9 +16,9 @@ class GameMode(Enum):
 # settings class exists here directly and not in model.py to avoid cyclic imports
 class Settings(BaseSettings):
     single_player: bool | None = Field(default=False)
-    dev_mode: bool | None = Field(default=False)
     admin_guild_id: int = Field(default=None, validate_default=True)
     token: str = Field(default=None, validate_default=True)
+    command_signature_file: str | Path = Field(default="command_signature.json")
 
     model_config = SettingsConfigDict(env_file='.env')
 
