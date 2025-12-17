@@ -15,7 +15,7 @@ def empty_history():
 
 @pytest.fixture
 def positive_scoring_words():
-    return ['as', 'arctic', 'app', 'alu', 'arena']
+    return ['ad', 'arctic', 'app', 'aluminium', 'arena']
 
 
 @pytest.fixture
@@ -65,7 +65,22 @@ def same_ending_letter_history(same_ending_letter_words: list[str]):
     return last_words
 
 
+def test_precondition(positive_scoring_words: list[str], negative_scoring_words: list[str],
+                      mixed_scoring_words: list[str], same_ending_letter_words: list[str]):
+    for word in positive_scoring_words:
+        assert calculate_total_karma(word, deque()) > 0
+    for word in negative_scoring_words:
+        assert calculate_total_karma(word, deque()) < 0
+    for word in mixed_scoring_words:
+        assert (word[-1:] not in [w[-1:] for w in positive_scoring_words] + [w[-1:] for w in negative_scoring_words] +
+                [w[-1:] for w in same_ending_letter_words])
+    for word in same_ending_letter_words:
+        assert (word[-1:] not in [w[-1:] for w in positive_scoring_words] + [w[-1:] for w in negative_scoring_words] +
+                [w[-1:] for w in mixed_scoring_words])
+
+
 def test_positive_score_on_unused(positive_scoring_words: list[str], mixed_score_history: deque[str]):
+    # positive scoring words will result in positive karma, if their ending letter has not been used recently
     for word in positive_scoring_words:
         assert word not in mixed_score_history
         karma = calculate_total_karma(word, mixed_score_history)
@@ -76,6 +91,7 @@ def test_positive_score_on_unused(positive_scoring_words: list[str], mixed_score
 def test_reduced_score_on_already_used(positive_scoring_words: list[str],
                                        positive_score_history: deque[str],
                                        negative_score_history: deque[str]):
+    # positive scoring words will result in lower karma, if words with the same ending letter have been used recently
     for word in positive_scoring_words:
         assert word in positive_score_history
         karma_on_positive_history = calculate_total_karma(word, positive_score_history)
@@ -89,6 +105,7 @@ def test_reduced_score_on_already_used(positive_scoring_words: list[str],
 def test_negative_score_irrelevant_history(negative_scoring_words: list[str],
                                            negative_score_history: deque[str],
                                            positive_score_history: deque[str]):
+    # if base karma is negative, we do not apply decay based on history
     for word in negative_scoring_words:
         assert word in negative_score_history
         assert word not in positive_score_history
