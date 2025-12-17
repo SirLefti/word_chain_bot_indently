@@ -79,7 +79,7 @@ async def __load_words(extracted_directory: PathLike[str] | str) -> list[str]:
         for line in contents.splitlines():
             parts = line.strip().split("\t")
             if len(parts) >= 2:
-                result.add(parts[1].lower())
+                result.add(parts[1])
 
     return list(result)
 
