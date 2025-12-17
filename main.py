@@ -344,7 +344,8 @@ The chain has **not** been broken. Please enter another word.''')
         if all(language.value.score_threshold[game_mode] > self.calculate_word_score(word, game_mode, language) for language in valid_languages):
             await WordChainBot.add_reaction(message, '⚠️')
             await WordChainBot.send_message_to_channel(message.channel, f'''Your word has no or just few words to continue with.
-The chain has **not** been broken. Please enter another word.''')
+The chain has **not** been broken. Please enter another word.\n
+-# If you think this is wrong, please let us know on our support server.''')
             return
 
         # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
