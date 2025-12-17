@@ -148,17 +148,21 @@ class ManagerCommandsCog(Cog, name=COG_NAME_MANAGER_CMDS):
             await interaction.response.defer()
 
             other_game_mode = GameMode.HARD if game_mode == GameMode.NORMAL else GameMode.NORMAL
+            server_config = self.cog.bot.server_configs[interaction.guild.id]
 
-            if self.cog.bot.server_configs[interaction.guild.id].game_state[other_game_mode].channel_id == channel.id:
+            if server_config.game_state[other_game_mode].channel_id == channel.id:
                 emb: Embed = Embed(title='Error', colour=Colour.red(),
                                    description=f'''You cannot use a channel for this game mode, that is assigned
 to the other game mode!''')
             else:
-                self.cog.bot.server_configs[interaction.guild.id].game_state[game_mode].channel_id = channel.id
-                await self.cog.bot.server_configs[interaction.guild.id].sync_to_db(self.cog.bot)
-                game_mode_name = 'normal game mode' if game_mode == GameMode.NORMAL else 'hard game mode'
+                server_config.game_state[game_mode].channel_id = channel.id
+                await server_config.sync_to_db(self.cog.bot)
+                extra_information = 'Start there with any valid word you like.' \
+                    if server_config.game_state[game_mode].current_word is None else \
+                    f'The last valid word was `{server_config.game_state[game_mode].current_word}`.'
                 emb: Embed = Embed(title='Success', colour=Colour.green(),
-                                   description=f'''Word chain channel for {game_mode_name} was set to {channel.mention}.''')
+                                   description=f'''Word chain channel for {game_mode.name.lower()} game mode was set to 
+{channel.mention}. {extra_information}''')
 
             await interaction.followup.send(embed=emb)
 
