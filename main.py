@@ -338,16 +338,6 @@ The chain has **not** been broken. Please enter another word.''')
 The chain has **not** been broken. Please enter another word.''')
             return
 
-        # --------------------
-        # Check word score
-        # --------------------
-        if all(language.value.score_threshold[game_mode] > self.calculate_word_score(word, game_mode, language) for language in valid_languages):
-            await WordChainBot.add_reaction(message, '⚠️')
-            await WordChainBot.send_message_to_channel(message.channel, f'''Your word has no or just few words to continue with.
-The chain has **not** been broken. Please enter another word.\n
--# If you think this is wrong, please let us know on our support server.''')
-            return
-
         # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         # ADD USER TO THE DATABASE
         # ------------------------------------
@@ -447,7 +437,6 @@ try to beat the current high score of **{self.server_configs[server_id].game_sta
 
             # -------------------------
             # Wrong starting letter
-            # (inc. accents)
             # -------------------------
             if (self.server_configs[server_id].game_state[game_mode].current_word and word[:game_mode.value] !=
                     self.server_configs[server_id].game_state[game_mode].current_word[-game_mode.value:]):
@@ -514,6 +503,16 @@ Restart and try to beat the current high score of **{self.server_configs[server_
                     await WordChainBot.send_message_to_channel(message.channel, ''':octagonal_sign: There was an issue in the backend.
 The above entered word is **NOT** being taken into account.''')
                     return
+
+            # --------------------
+            # Check word score
+            # --------------------
+            if all(language.value.score_threshold[game_mode] > self.calculate_word_score(word, game_mode, language) for language in valid_languages):
+                await WordChainBot.add_reaction(message, '⚠️')
+                await WordChainBot.send_message_to_channel(message.channel, f'''Your word has no or just few words to continue with.
+The chain has **not** been broken. Please enter another word.\n
+-# If you think this is wrong, please let us know on our support server.''')
+                return
 
             # --------------------
             # Everything is fine
