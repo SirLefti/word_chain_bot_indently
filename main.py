@@ -2,6 +2,7 @@ import asyncio
 import concurrent.futures
 import contextlib
 import inspect
+import json
 import logging
 import os
 import random
@@ -13,7 +14,7 @@ from collections import defaultdict, deque
 from concurrent.futures import Future
 from json import JSONDecodeError
 from logging.config import fileConfig
-from typing import AsyncIterator, List, Optional
+from typing import Any, AsyncIterator, List, Optional
 
 import discord
 from alembic import command as alembic_command
@@ -337,15 +338,6 @@ The chain has **not** been broken. Please enter another word.''')
 The chain has **not** been broken. Please enter another word.''')
             return
 
-        # --------------------
-        # Check word score
-        # --------------------
-        if all(language.value.score_threshold[game_mode] > self.calculate_word_score(word, game_mode, language) for language in valid_languages):
-            await WordChainBot.add_reaction(message, '⚠️')
-            await WordChainBot.send_message_to_channel(message.channel, f'''Your word has no or just few words to continue with.
-The chain has **not** been broken. Please enter another word.''')
-            return
-
         # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         # ADD USER TO THE DATABASE
         # ------------------------------------
@@ -445,7 +437,6 @@ try to beat the current high score of **{self.server_configs[server_id].game_sta
 
             # -------------------------
             # Wrong starting letter
-            # (inc. accents)
             # -------------------------
             if (self.server_configs[server_id].game_state[game_mode].current_word and word[:game_mode.value] !=
                     self.server_configs[server_id].game_state[game_mode].current_word[-game_mode.value:]):
@@ -512,6 +503,16 @@ Restart and try to beat the current high score of **{self.server_configs[server_
                     await WordChainBot.send_message_to_channel(message.channel, ''':octagonal_sign: There was an issue in the backend.
 The above entered word is **NOT** being taken into account.''')
                     return
+
+            # --------------------
+            # Check word score
+            # --------------------
+            if all(language.value.score_threshold[game_mode] > self.calculate_word_score(word, game_mode, language) for language in valid_languages):
+                await WordChainBot.add_reaction(message, '⚠️')
+                await WordChainBot.send_message_to_channel(message.channel, f'''Your word has no or just few words to continue with.
+The chain has **not** been broken. Please enter another word.\n
+-# If you think this is wrong, please let us know on our support server.''')
+                return
 
             # --------------------
             # Everything is fine
@@ -1054,12 +1055,30 @@ The above entered word is **NOT** being taken into account.''')
         for cog_name in COGS_LIST:
             await self.load_extension(f'cogs.{cog_name}')
 
-        if not SETTINGS.dev_mode:
-            # only sync when not in dev mode to avoid syncing over and over again - use sync command explicitly
-            global_sync = await self.tree.sync()
-            admin_sync = await self.tree.sync(guild=discord.Object(id=SETTINGS.admin_guild_id))
+        signature = load_command_signature()
 
-            logger.info(f'Synchronized {len(global_sync)} global commands and {len(admin_sync)} admin commands')
+        admin_guild = Object(id=SETTINGS.admin_guild_id)
+
+        global_payload = [command.to_dict(self.tree) for command in self.tree.get_commands()]
+        admin_payload = [command.to_dict(self.tree) for command in self.tree.get_commands(guild=admin_guild)]
+
+        global_changed = signature['global_commands'] != global_payload
+        admin_changed = signature['admin_commands'] != admin_payload
+
+        if global_changed:
+            global_sync = await self.tree.sync()
+            logger.info(f'Synchronized {len(global_sync)} global commands')
+        else:
+            logger.info('No changes in global commands detected')
+
+        if admin_changed:
+            admin_sync = await self.tree.sync(guild=admin_guild)
+            logger.info(f'Synchronized {len(admin_sync)} admin commands')
+        else:
+            logger.info('No changes in admin commands detected')
+
+        if global_changed or admin_changed:
+            store_command_signature(global_payload, admin_payload)
 
         alembic_cfg = AlembicConfig('config.ini')
         alembic_command.upgrade(alembic_cfg, 'head')
@@ -1069,6 +1088,29 @@ word_chain_bot: WordChainBot = WordChainBot()
 
 
 # ===================================================================================================================
+
+
+def load_command_signature() -> dict:
+    try:
+        with open(SETTINGS.command_signature_file,'r') as f:
+            signature = json.load(f)
+    except (JSONDecodeError, FileNotFoundError):
+        logger.error('Failed to load existing command signature')
+        signature = {
+            'global_commands': [],
+            'admin_commands': []
+        }
+    return signature
+
+
+def store_command_signature(global_commands: list[dict[str, Any]], admin_commands: list[dict[str, Any]]):
+    with open(SETTINGS.command_signature_file, 'w') as f:
+        signature = {
+            'global_commands': global_commands,
+            'admin_commands': admin_commands
+        }
+        json.dump(signature, f)
+        logger.info('Dumped latest command signature')
 
 
 @word_chain_bot.tree.command(name='reload', description='Unload and reload a cog')
@@ -1081,7 +1123,7 @@ word_chain_bot: WordChainBot = WordChainBot()
     app_commands.Choice(name='User Commands', value=COG_NAME_USER_CMDS),
     app_commands.Choice(name='All cogs', value='all')
 ])
-async def reload(interaction: Interaction, cog_name: str):
+async def reload(interaction: Interaction, cog_name: str, force_sync: bool = False):
     """Reloads a particular cog/all cogs."""
 
     await interaction.response.defer()
@@ -1105,12 +1147,37 @@ async def reload(interaction: Interaction, cog_name: str):
 
             await word_chain_bot.load_extension(f'cogs.{cog_name}')
 
-    global_sync: list[app_commands.AppCommand] = await word_chain_bot.tree.sync()
-    admin_sync: list[app_commands.AppCommand] = await word_chain_bot.tree.sync(guild=Object(id=SETTINGS.admin_guild_id))
+    admin_guild = Object(id=SETTINGS.admin_guild_id)
+    global_payload = [command.to_dict(word_chain_bot.tree) for command in word_chain_bot.tree.get_commands()]
+    admin_payload = [command.to_dict(word_chain_bot.tree) for command in word_chain_bot.tree.get_commands(guild=admin_guild)]
 
     emb: Embed = Embed(title=f'Sync status', description=f'Synchronization complete.', colour=Colour.dark_magenta())
-    emb.add_field(name="Global commands", value=f"{len(global_sync)}")
-    emb.add_field(name="Admin commands", value=f"{len(admin_sync)}")
+
+    if force_sync:
+        global_sync: list[app_commands.AppCommand] | None = await word_chain_bot.tree.sync()
+        admin_sync: list[app_commands.AppCommand] | None = await word_chain_bot.tree.sync(guild=admin_guild)
+
+        store_command_signature(global_payload, admin_payload)
+    else:
+        signature = load_command_signature()
+        global_changed = signature['global_commands'] != global_payload
+        admin_changed = signature['admin_commands'] != admin_payload
+
+        if global_changed:
+            global_sync: list[app_commands.AppCommand] = await word_chain_bot.tree.sync()
+        else:
+            global_sync = None
+
+        if admin_changed:
+            admin_sync: list[app_commands.AppCommand] = await word_chain_bot.tree.sync(guild=admin_guild)
+        else:
+            admin_sync = None
+
+        if global_changed or admin_changed:
+            store_command_signature(global_payload, admin_payload)
+
+    emb.add_field(name="Global commands", value=f"{len(global_sync)}" if global_sync else "SKIPPED")
+    emb.add_field(name="Admin commands", value=f"{len(admin_sync)}" if admin_sync else "SKIPPED")
 
     await interaction.followup.send(embed=emb)
 

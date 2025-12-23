@@ -58,7 +58,7 @@ async def main(language: Language):
     __LOGGER.info(f'analyzing for {language.value.code}')
     words = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
     regex = re.compile(language.value.allowed_word_regex)
-    accepted_words = [word for word in words if regex.match(word)]
+    accepted_words = [word.lower() for word in words if regex.match(word.lower()) and not word.isupper()]
     result = generate_token_scores(accepted_words, [game_mode for game_mode in GameMode])
     with open(LANGUAGES_DIRECTORY / f'scores_{language.value.code}.json', 'w', encoding='utf-8') as export_file:
         json.dump(result, export_file, indent=4, sort_keys=True, ensure_ascii=False)

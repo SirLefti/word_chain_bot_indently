@@ -20,7 +20,7 @@ async def main():
 
     words = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
     regex = re.compile(language.value.allowed_word_regex)
-    accepted_words = [word for word in words if regex.match(word)]
+    accepted_words = [word.lower() for word in words if regex.match(word.lower()) and not word.isupper()]
     total_words = len(accepted_words)
 
     async with word_chain_bot.db_connection(locked=True) as connection:
