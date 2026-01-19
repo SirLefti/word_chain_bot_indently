@@ -250,6 +250,7 @@ SPECIAL_REACTION_EMOJIS: dict[str, str] = {
     'turkmenistan': '🇹🇲',
     'tuvalu': '🇹🇻',
     'turkey': '🦃',
+    'türkiye': '🇹🇷',
     'uganda': '🇺🇬',
     'ukraine': '🇺🇦',
     'emirates': '🇦🇪',
