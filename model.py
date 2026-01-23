@@ -8,7 +8,7 @@ from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from consts import GameMode
+from consts import GameMode, SPECIAL_REACTION_EMOJIS
 from language import Language
 
 if TYPE_CHECKING:
@@ -141,7 +141,7 @@ class ServerConfig(BaseModel):
         """
         Get the reaction emoji based on the current count.
         """
-        special_emojis = {
+        special_count_emojis: dict[int, str] = {
             100: "💯",
             69: "😏",
             666: "👹",
@@ -151,9 +151,15 @@ class ServerConfig(BaseModel):
                 emoji = "🎉"
                 self.game_state[game_mode].used_high_score_emoji = True
             else:
-                emoji = special_emojis.get(self.game_state[game_mode].current_count, '☑️')
+                emoji = SPECIAL_REACTION_EMOJIS.get(
+                    self.game_state[game_mode].current_word,
+                    special_count_emojis.get(self.game_state[game_mode].current_count, '☑️')
+                )
         else:
-            emoji = special_emojis.get(self.game_state[game_mode].current_count, '✅')
+            emoji = SPECIAL_REACTION_EMOJIS.get(
+                self.game_state[game_mode].current_word,
+                special_count_emojis.get(self.game_state[game_mode].current_count, '✅')
+            )
         return emoji
 
     def __update_statement(self):
