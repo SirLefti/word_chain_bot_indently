@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import discord
 from discord import Colour, Embed, Interaction, Permissions, Role, TextChannel, app_commands
-from discord.app_commands import Group, Choice
+from discord.app_commands import Choice, Group
 from discord.ext.commands import Cog
 from sqlalchemy import CursorResult, delete, insert, select
 from sqlalchemy.exc import SQLAlchemyError

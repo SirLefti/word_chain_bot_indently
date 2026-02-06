@@ -8,7 +8,7 @@ from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from consts import GameMode, SPECIAL_REACTION_EMOJIS
+from consts import SPECIAL_REACTION_EMOJIS, GameMode
 from language import Language
 
 if TYPE_CHECKING:
