@@ -49,10 +49,10 @@ HISTORY_LENGTH: int = 5
 MISTAKE_PENALTY: int = 5
 """Amount of karma subtracted for a mistake"""
 
-RELIABLE_ROLE_KARMA_THRESHOLD: int = 50
+RELIABLE_ROLE_KARMA_THRESHOLD: int = 25
 """Minimum karma needed for the reliable role"""
 
-RELIABLE_ROLE_ACCURACY_THRESHOLD: float = .99
+RELIABLE_ROLE_ACCURACY_THRESHOLD: float = .975
 """Minimum accuracy needed for the reliable role"""
 
 SPECIAL_REACTION_EMOJIS: dict[str, str] = {
@@ -250,6 +250,7 @@ SPECIAL_REACTION_EMOJIS: dict[str, str] = {
     'turkmenistan': '🇹🇲',
     'tuvalu': '🇹🇻',
     'turkey': '🦃',
+    'türkiye': '🇹🇷',
     'uganda': '🇺🇬',
     'ukraine': '🇺🇦',
     'emirates': '🇦🇪',

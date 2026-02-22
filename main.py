@@ -522,10 +522,7 @@ The chain has **not** been broken. Please enter another word.\n
                                                           current_word=word)
 
             timestamps.append(time.monotonic())  # t2
-            await WordChainBot.add_reaction(message,
-                                            SPECIAL_REACTION_EMOJIS.get(
-                                                word, self.server_configs[server_id].reaction_emoji(game_mode)
-                                            ))
+            await WordChainBot.add_reaction(message, self.server_configs[server_id].reaction_emoji(game_mode))
 
             last_words: deque[str] = self._server_histories[server_id][message.author.id][game_mode]
             # fallback to first configured language if matched_language is unavailable (e.g. matched by whitelist)

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import discord
 from discord import Colour, Embed, Interaction, Permissions, Role, TextChannel, app_commands
-from discord.app_commands import Group
+from discord.app_commands import Choice, Group
 from discord.ext.commands import Cog
 from sqlalchemy import CursorResult, delete, insert, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -55,7 +55,7 @@ class ManagerCommandsCog(Cog, name=COG_NAME_MANAGER_CMDS):
 
         logger.info(f'Cog {self.qualified_name} unloaded.')
 
-    # =============================================================================================================
+    # ================================================================================================================
 
     @app_commands.command(name='reset_stats', description='Resets all stats for this server, but keeps the '
                                                           'configuration')
@@ -88,7 +88,7 @@ class ManagerCommandsCog(Cog, name=COG_NAME_MANAGER_CMDS):
 
         await interaction.followup.send(embed=emb)
 
-    # =============================================================================================================
+    # ================================================================================================================
 
     class SetupCommandsGroup(Group):
 
@@ -137,7 +137,7 @@ class ManagerCommandsCog(Cog, name=COG_NAME_MANAGER_CMDS):
                                    description=f'''Reliable role was set to {role.mention}!''')
                 await interaction.followup.send(embed=emb)
 
-        # ---------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------------------------
 
         @app_commands.command(name='channel', description='Sets the game channel')
         @app_commands.describe(channel='The channel where the game will be played')
@@ -166,7 +166,7 @@ to the other game mode!''')
 
             await interaction.followup.send(embed=emb)
 
-        # ---------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------------------------
 
         @app_commands.command(name='failed_role',
                               description='Sets the role to be used when a user puts a wrong word')
@@ -205,7 +205,7 @@ to the other game mode!''')
                                    description=f'''Failed role was set to {role.mention}.''')
                 await interaction.followup.send(embed=emb)
 
-    # =================================================================================================================
+    # ===============================================================================================================
 
     class UnsetCommandsGroup(Group):
 
@@ -238,7 +238,7 @@ to the other game mode!''')
                                    description=f'''Failed role was already unset!''')
                 await interaction.followup.send(embed=emb)
 
-        # ---------------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------------------------
 
         @app_commands.command(name='reliable_role', description='Removes the reliable role feature')
         async def remove_reliable_role(self, interaction: Interaction):
@@ -271,7 +271,7 @@ to the other game mode!''')
                              default_permissions=Permissions(manage_guild=True))
             self.cog: ManagerCommandsCog = parent_cog
 
-        # ---------------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------------------------
 
         # subcommand of Group
         @app_commands.command(description='Add a word to the blacklist')
@@ -297,10 +297,21 @@ to the other game mode!''')
             emb.description = f'✅ The word *{word.lower()}* was successfully added to the blacklist.'
             await interaction.followup.send(embed=emb)
 
-        # ---------------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------------------------
+
+        async def _autocomplete_remove_from_blacklist(self, interaction: Interaction, input: str) -> list[Choice[str]]:
+            async with self.cog.bot.db_connection() as connection:
+                stmt = select(BlacklistModel.word).where(
+                    BlacklistModel.server_id == interaction.guild.id,
+                    BlacklistModel.word.startswith(input.lower())
+                ).limit(25)
+                result: CursorResult = await connection.execute(stmt)
+                words = [row[0] for row in result]
+                return [Choice(name=word, value=word) for word in words]
 
         @app_commands.command(description='Remove a word from the blacklist')
         @app_commands.describe(word='The word to be removed from the blacklist')
+        @app_commands.autocomplete(word=_autocomplete_remove_from_blacklist)
         async def remove(self, interaction: Interaction, word: str) -> None:
             await interaction.response.defer()
 
@@ -325,7 +336,7 @@ to the other game mode!''')
                 emb.description = f'✅ The word *{word.lower()}* has been removed from the blacklist.'
             await interaction.followup.send(embed=emb)
 
-        # ---------------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------------------------
 
         @app_commands.command(description='List the blacklisted words')
         async def show(self, interaction: Interaction) -> None:
@@ -365,7 +376,7 @@ to the other game mode!''')
                              default_permissions=Permissions(manage_guild=True))
             self.cog: ManagerCommandsCog = parent_cog
 
-        # ---------------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------------------------
 
         # subcommand of Group
         @app_commands.command(description='Add a word to the whitelist')
@@ -391,10 +402,21 @@ to the other game mode!''')
             emb.description = f'✅ The word *{word.lower()}* was successfully added to the whitelist.'
             await interaction.followup.send(embed=emb)
 
-        # ---------------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------------------------
+
+        async def _autocomplete_remove_from_whitelist(self, interaction: Interaction, input: str) -> list[Choice[str]]:
+            async with self.cog.bot.db_connection() as connection:
+                stmt = select(WhitelistModel.word).where(
+                    WhitelistModel.server_id == interaction.guild.id,
+                    WhitelistModel.word.startswith(input.lower())
+                ).limit(25)
+                result: CursorResult = await connection.execute(stmt)
+                words = [row[0] for row in result]
+                return [Choice(name=word, value=word) for word in words]
 
         @app_commands.command(description='Remove a word from the whitelist')
         @app_commands.describe(word='The word to be removed')
+        @app_commands.autocomplete(word=_autocomplete_remove_from_whitelist)
         async def remove(self, interaction: Interaction, word: str) -> None:
             await interaction.response.defer()
 
@@ -419,7 +441,7 @@ to the other game mode!''')
                 emb.description = f'✅ The word *{word.lower()}* has been removed from the whitelist.'
             await interaction.followup.send(embed=emb)
 
-        # ---------------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------------------------
 
         @app_commands.command(description='List the whitelisted words')
         async def show(self, interaction: Interaction) -> None:
@@ -452,7 +474,7 @@ to the other game mode!''')
                              default_permissions=Permissions(manage_guild=True))
             self.cog: ManagerCommandsCog = parent_cog
 
-        # -------------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------------------------
 
         @staticmethod
         def get_current_languages(bot: WordChainBot, server_id: int) -> str:
@@ -476,7 +498,7 @@ to the other game mode!''')
 {'\n'.join(f'- {language.display_name} (`{language.value.code}`)'
            for language in bot.server_configs[server_id].languages)}'''
 
-        # -------------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------------------------
 
         @app_commands.command(name='show-all', description="Shows all available languages")
         async def show_all(self, interaction: Interaction) -> None:
@@ -491,10 +513,16 @@ to the other game mode!''')
 
             await interaction.followup.send(embed=emb)
 
-        # -------------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------------------------
+
+        async def _autocomplete_add_language(self, interaction: Interaction, input: str) -> list[Choice[str]]:
+            already_assigned_languages = self.cog.bot.server_configs[interaction.guild.id].languages
+            values = [l.value.code for l in Language if l.value.code.startswith(input.lower()) and l not in already_assigned_languages][:25]
+            return [Choice(name=v, value=v) for v in values]
 
         @app_commands.command(name='add', description="Add a new language")
         @app_commands.describe(language_code="The language code")
+        @app_commands.autocomplete(language_code=_autocomplete_add_language)
         async def add(self, interaction: Interaction, language_code: str) -> None:
             await interaction.response.defer()
 
@@ -537,10 +565,16 @@ to the other game mode!''')
 
             await interaction.followup.send(embed=embed)
 
-        # -------------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------------------------
+
+        async def _autocomplete_remove_language(self, interaction: Interaction, input: str) -> list[Choice[str]]:
+            available_languages = self.cog.bot.server_configs[interaction.guild_id].languages
+            values = [l.value.code for l in available_languages if l.value.code.startswith(input.lower())][:25]
+            return [Choice(name=v, value=v) for v in values]
 
         @app_commands.command(name='remove', description="Remove a language")
         @app_commands.describe(language_code="The language code")
+        @app_commands.autocomplete(language_code=_autocomplete_remove_language)
         async def remove(self, interaction: Interaction, language_code: str) -> None:
             await interaction.response.defer()
 
@@ -583,7 +617,7 @@ to the other game mode!''')
 
             await interaction.followup.send(embed=embed)
 
-# ================================================================================================================
+# ====================================================================================================================
 
 
 async def setup(bot: WordChainBot):
