@@ -781,7 +781,7 @@ Longest chain length: {config.game_state[game_mode].high_score}
 **✅Correct:** {db_member.correct}
 **❌Wrong:** {db_member.wrong}
 **Accuracy:** {(db_member.correct / (db_member.correct + db_member.wrong)):.2%}'''
-                ).set_author(name=f"{member} | stats", icon_url=get_member_avatar())
+                ).set_author(name=f"{scope_member} | stats", icon_url=get_member_avatar())
 
                 await interaction.followup.send(embed=emb)
 
