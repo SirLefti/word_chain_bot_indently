@@ -660,7 +660,7 @@ as it will allow more people discover it!
                         stmt = (select(ServerConfigModel.server_id, ServerConfigModel.hard_mode_high_score)
                                 .where(
                             or_(ServerConfigModel.is_banned == 0, ServerConfigModel.server_id == guild.id))
-                                .where(ServerConfigModel.high_score > 0)
+                                .where(ServerConfigModel.hard_mode_high_score > 0)
                                 .order_by(ServerConfigModel.hard_mode_high_score.desc())
                                 .limit(limit))
                         game_mode_name = 'Hard Mode'
