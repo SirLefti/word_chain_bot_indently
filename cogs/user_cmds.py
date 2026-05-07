@@ -649,21 +649,19 @@ as it will allow more people discover it!
 
                 match game_mode:
                     case GameMode.NORMAL:
-                        stmt = (select(ServerConfigModel.server_id, ServerConfigModel.high_score)
-                                .where(
-                            or_(ServerConfigModel.is_banned == 0, ServerConfigModel.server_id == guild.id))
-                                .where(ServerConfigModel.high_score > 0)
-                                .order_by(ServerConfigModel.high_score.desc())
-                                .limit(limit))
+                        high_score_column = ServerConfigModel.high_score
                         game_mode_name = 'Normal Mode'
                     case GameMode.HARD:
-                        stmt = (select(ServerConfigModel.server_id, ServerConfigModel.hard_mode_high_score)
-                                .where(
-                            or_(ServerConfigModel.is_banned == 0, ServerConfigModel.server_id == guild.id))
-                                .where(ServerConfigModel.hard_mode_high_score > 0)
-                                .order_by(ServerConfigModel.hard_mode_high_score.desc())
-                                .limit(limit))
+                        high_score_column = ServerConfigModel.hard_mode_high_score
                         game_mode_name = 'Hard Mode'
+
+                stmt = (select(ServerConfigModel.server_id, high_score_column)
+                        .where(
+                            or_(ServerConfigModel.is_banned == 0, ServerConfigModel.server_id == guild.id)
+                        )
+                        .where(high_score_column > 0)
+                        .order_by(high_score_column.desc())
+                        .limit(limit))
 
                 emb = Embed(
                     title=f'Top 10 servers by highscore',
@@ -675,9 +673,14 @@ as it will allow more people discover it!
                 data: Sequence[Row[tuple[int, int]]] = result.fetchall()
 
                 guild_names = defaultdict(lambda: 'unknown', {g.id: g.name for g in self.cog.bot.guilds})
-                for i, server_data in enumerate(data, 1):
-                    server_id, high_score = server_data
-                    emb.description += f'{i}. {guild_names[server_id]} **{high_score}**\n'
+                last_high_score = None
+                last_rank = 0
+                for rank, (server_id, high_score) in enumerate(data, 1):
+                    if last_high_score == high_score:
+                        rank = last_rank
+                    emb.description += f'{rank}\\. {guild_names[server_id]} **{high_score}**\n'
+                    last_high_score = high_score
+                    last_rank = rank
 
                 await interaction.followup.send(embed=emb)
 
