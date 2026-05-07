@@ -623,13 +623,19 @@ as it will allow more people discover it!
                         case 'global':
                             emb.description = ':warning: No users have played yet!'
                 else:
-                    for i, user_data in enumerate(data, 1):
+                    last_score_or_karma = None
+                    last_rank = 0
+                    for rank, user_data in enumerate(data, 1):
                         member_id, score_or_karma = user_data
+                        if last_score_or_karma == score_or_karma:
+                            rank = last_rank
                         match board_metric:
                             case 'score':
-                                emb.description += f'{i}. <@{member_id}> **{score_or_karma}**\n'
+                                emb.description += f'`{str(rank).rjust(2, ' ')}.` <@{member_id}> **{score_or_karma}**\n'
                             case 'karma':
-                                emb.description += f'{i}. <@{member_id}> **{score_or_karma:.2f}**\n'
+                                emb.description += f'`{str(rank).rjust(2, ' ')}.` <@{member_id}> **{score_or_karma:.2f}**\n'
+                        last_score_or_karma = score_or_karma
+                        last_rank = rank
 
                 await interaction.followup.send(embed=emb)
 
@@ -678,7 +684,7 @@ as it will allow more people discover it!
                 for rank, (server_id, high_score) in enumerate(data, 1):
                     if last_high_score == high_score:
                         rank = last_rank
-                    emb.description += f'{rank}\\. {guild_names[server_id]} **{high_score}**\n'
+                    emb.description += f'`{str(rank).rjust(2, ' ')}.` {guild_names[server_id]} **{high_score}**\n'
                     last_high_score = high_score
                     last_rank = rank
 
