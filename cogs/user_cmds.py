@@ -623,13 +623,19 @@ as it will allow more people discover it!
                         case 'global':
                             emb.description = ':warning: No users have played yet!'
                 else:
-                    for i, user_data in enumerate(data, 1):
+                    last_score_or_karma = None
+                    last_rank = 0
+                    for rank, user_data in enumerate(data, 1):
                         member_id, score_or_karma = user_data
+                        if last_score_or_karma == score_or_karma:
+                            rank = last_rank
                         match board_metric:
                             case 'score':
-                                emb.description += f'{i}. <@{member_id}> **{score_or_karma}**\n'
+                                emb.description += f'`{str(rank).rjust(2, ' ')}.` <@{member_id}> **{score_or_karma}**\n'
                             case 'karma':
-                                emb.description += f'{i}. <@{member_id}> **{score_or_karma:.2f}**\n'
+                                emb.description += f'`{str(rank).rjust(2, ' ')}.` <@{member_id}> **{score_or_karma:.2f}**\n'
+                        last_score_or_karma = score_or_karma
+                        last_rank = rank
 
                 await interaction.followup.send(embed=emb)
 
@@ -649,21 +655,19 @@ as it will allow more people discover it!
 
                 match game_mode:
                     case GameMode.NORMAL:
-                        stmt = (select(ServerConfigModel.server_id, ServerConfigModel.high_score)
-                                .where(
-                            or_(ServerConfigModel.is_banned == 0, ServerConfigModel.server_id == guild.id))
-                                .where(ServerConfigModel.high_score > 0)
-                                .order_by(ServerConfigModel.high_score.desc())
-                                .limit(limit))
+                        high_score_column = ServerConfigModel.high_score
                         game_mode_name = 'Normal Mode'
                     case GameMode.HARD:
-                        stmt = (select(ServerConfigModel.server_id, ServerConfigModel.hard_mode_high_score)
-                                .where(
-                            or_(ServerConfigModel.is_banned == 0, ServerConfigModel.server_id == guild.id))
-                                .where(ServerConfigModel.high_score > 0)
-                                .order_by(ServerConfigModel.hard_mode_high_score.desc())
-                                .limit(limit))
+                        high_score_column = ServerConfigModel.hard_mode_high_score
                         game_mode_name = 'Hard Mode'
+
+                stmt = (select(ServerConfigModel.server_id, high_score_column)
+                        .where(
+                            or_(ServerConfigModel.is_banned == 0, ServerConfigModel.server_id == guild.id)
+                        )
+                        .where(high_score_column > 0)
+                        .order_by(high_score_column.desc())
+                        .limit(limit))
 
                 emb = Embed(
                     title=f'Top 10 servers by highscore',
@@ -675,9 +679,14 @@ as it will allow more people discover it!
                 data: Sequence[Row[tuple[int, int]]] = result.fetchall()
 
                 guild_names = defaultdict(lambda: 'unknown', {g.id: g.name for g in self.cog.bot.guilds})
-                for i, server_data in enumerate(data, 1):
-                    server_id, high_score = server_data
-                    emb.description += f'{i}. {guild_names[server_id]} **{high_score}**\n'
+                last_high_score = None
+                last_rank = 0
+                for rank, (server_id, high_score) in enumerate(data, 1):
+                    if last_high_score == high_score:
+                        rank = last_rank
+                    emb.description += f'`{str(rank).rjust(2, ' ')}.` {guild_names[server_id]} **{high_score}**\n'
+                    last_high_score = high_score
+                    last_rank = rank
 
                 await interaction.followup.send(embed=emb)
 
@@ -781,7 +790,7 @@ Longest chain length: {config.game_state[game_mode].high_score}
 **✅Correct:** {db_member.correct}
 **❌Wrong:** {db_member.wrong}
 **Accuracy:** {(db_member.correct / (db_member.correct + db_member.wrong)):.2%}'''
-                ).set_author(name=f"{member} | stats", icon_url=get_member_avatar())
+                ).set_author(name=f"{scope_member} | stats", icon_url=get_member_avatar())
 
                 await interaction.followup.send(embed=emb)
 

@@ -63,10 +63,6 @@ class GameCog(Cog, name=COG_NAME_GAME):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
-        if message.type != MessageType.default:
-            # return early if it was not caused by a normal user message, e.g. use of commands
-            return
-
         if not self.bot.is_ready():
             return
 
