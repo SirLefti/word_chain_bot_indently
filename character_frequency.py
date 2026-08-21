@@ -40,7 +40,7 @@ def has_uppercase_beyond_first(word: str) -> bool:
     return any(c.isupper() for c in word[1:])
 
 
-def accepted_words(words: list[str], language: Language) -> list[str]:
+def accepted_words(words: list[str], language: Language) -> set[str]:
     """
     Filters corpus words down to those usable for the given language and lowercases them.
     """
