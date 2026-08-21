@@ -174,9 +174,12 @@ async def reload(interaction: Interaction, cog_name: str, force_sync: bool = Fal
 
     emb: Embed = Embed(title=f'Sync status', description=f'Synchronization complete.', colour=Colour.dark_magenta())
 
+    global_sync: list[app_commands.AppCommand] | None
+    admin_sync: list[app_commands.AppCommand] | None
+
     if force_sync:
-        global_sync: list[app_commands.AppCommand] | None = await word_chain_bot.tree.sync()
-        admin_sync: list[app_commands.AppCommand] | None = await word_chain_bot.tree.sync(guild=admin_guild)
+        global_sync = await word_chain_bot.tree.sync()
+        admin_sync = await word_chain_bot.tree.sync(guild=admin_guild)
 
         store_command_signature(global_payload, admin_payload)
     else:
@@ -185,12 +188,12 @@ async def reload(interaction: Interaction, cog_name: str, force_sync: bool = Fal
         admin_changed = signature['admin_commands'] != admin_payload
 
         if global_changed:
-            global_sync: list[app_commands.AppCommand] = await word_chain_bot.tree.sync()
+            global_sync = await word_chain_bot.tree.sync()
         else:
             global_sync = None
 
         if admin_changed:
-            admin_sync: list[app_commands.AppCommand] = await word_chain_bot.tree.sync(guild=admin_guild)
+            admin_sync = await word_chain_bot.tree.sync(guild=admin_guild)
         else:
             admin_sync = None
 
