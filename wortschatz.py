@@ -60,11 +60,8 @@ async def __download_and_extract_tar(url: str, extraction_directory: PathLike[st
 
 async def __load_words(extracted_directory: PathLike[str] | str) -> list[str]:
     # Find the *-words.txt file inside the extracted directory
-    words_file = None
-    for file in os.listdir(extracted_directory):
-        if file.endswith("-words.txt"):
-            words_file = os.path.join(extracted_directory, file)
-            break
+    words_file = next((os.path.join(extracted_directory, file) for file in os.listdir(extracted_directory)
+                       if file.endswith("-words.txt")), None)
 
     if not words_file:
         raise FileNotFoundError("No *-words.txt file found in the extracted directory.")
