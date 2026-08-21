@@ -7,7 +7,7 @@ import string
 from collections import defaultdict
 from itertools import product
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 
 from consts import GameMode
 from language import LANGUAGES_DIRECTORY, Language
@@ -40,16 +40,16 @@ def has_uppercase_beyond_first(word: str) -> bool:
     return any(c.isupper() for c in word[1:])
 
 
-def accepted_words(words: list[str], language: Language) -> set[str]:
+def accepted_words(words: Iterable[str], language: Language) -> Iterable[str]:
     """
     Filters corpus words down to those usable for the given language and lowercases them.
     """
     regex = re.compile(language.value.allowed_word_regex)
-    return [word.lower() for word in words
-            if regex.match(word.lower()) and not has_uppercase_beyond_first(word)]
+    return {word.lower() for word in words
+            if regex.match(word.lower()) and not has_uppercase_beyond_first(word)}
 
 
-def generate_token_scores(words: list[str], game_modes: list[GameMode]) -> dict[int, dict[str, float]]:
+def generate_token_scores(words: Iterable[str], game_modes: Iterable[GameMode]) -> dict[int, dict[str, float]]:
     scores: dict[int, dict[str, float]] = dict()
 
     for game_mode in game_modes:
