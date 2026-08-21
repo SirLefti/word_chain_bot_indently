@@ -55,7 +55,11 @@ class WordChainBot(AutoShardedBot):
 
     async def on_ready(self) -> None:
         """Override the on_ready method"""
-        logger.info(f'Bot is ready as {self.user.name}#{self.user.discriminator}')
+        user = self.user
+        if not user:
+            logger.info('Bot is ready')
+        else:
+            logger.info(f'Bot is ready as {user.name}#{user.discriminator}')
 
     # ---------------------------------------------------------------------------------------------------------------
 
