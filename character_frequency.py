@@ -17,7 +17,7 @@ from wortschatz import CorporaSize, extract_words
 class ComputedDefaultDict(defaultdict):
 
     def __init__(self, default_factory: Callable, initial_values: dict | None):
-        super().__init__(default_factory, initial_values)
+        super().__init__(default_factory, initial_values if initial_values else {})
 
     def __missing__(self, key):
         self[key] = value = self.default_factory(key)
@@ -37,7 +37,7 @@ def generate_token_scores(words: list[str], game_modes: list[GameMode]) -> dict[
 
     for game_mode in game_modes:
         token_width = int(game_mode.value)
-        token_occurrences = defaultdict(lambda: 0)
+        token_occurrences: defaultdict[str, int] = defaultdict(lambda: 0)
         single_tokens = set(string.ascii_lowercase)
         valid_words = [word.lower() for word in words if len(word) >= token_width]
 
