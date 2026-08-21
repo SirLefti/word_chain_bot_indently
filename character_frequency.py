@@ -32,6 +32,23 @@ __LANGUAGE_SOURCES: dict[Language, str] = ComputedDefaultDict(lambda k: f'https:
 })
 
 
+def has_uppercase_beyond_first(word: str) -> bool:
+    """
+    Detects abbreviations, initialisms and brand spellings by checking for capital letters past the first
+    character. Regularly capitalized compounds like `U-Boot` are covered on purpose.
+    """
+    return any(c.isupper() for c in word[1:])
+
+
+def accepted_words(words: list[str], language: Language) -> list[str]:
+    """
+    Filters corpus words down to those usable for the given language and lowercases them.
+    """
+    regex = re.compile(language.value.allowed_word_regex)
+    return [word.lower() for word in words
+            if regex.match(word.lower()) and not has_uppercase_beyond_first(word)]
+
+
 def generate_token_scores(words: list[str], game_modes: list[GameMode]) -> dict[int, dict[str, float]]:
     scores: dict[int, dict[str, float]] = dict()
 
@@ -56,10 +73,9 @@ def generate_token_scores(words: list[str], game_modes: list[GameMode]) -> dict[
 
 async def run_for_language(language: Language):
     __LOGGER.info(f'analyzing for {language.value.code}')
-    words = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
-    regex = re.compile(language.value.allowed_word_regex)
-    accepted_words = [word.lower() for word in words if regex.match(word.lower()) and not word.isupper()]
-    result = generate_token_scores(accepted_words, [game_mode for game_mode in GameMode])
+    extracted_words = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
+    words = accepted_words(extracted_words, language)
+    result = generate_token_scores(words, [game_mode for game_mode in GameMode])
     with open(LANGUAGES_DIRECTORY / f'scores_{language.value.code}.json', 'w', encoding='utf-8') as export_file:
         json.dump(result, export_file, indent=4, sort_keys=True, ensure_ascii=False)
         __LOGGER.info(f'analyzed and exported for {language.value.code}')

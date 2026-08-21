@@ -1,10 +1,9 @@
 import argparse
 import asyncio
-import re
 
 from sqlalchemy.sql.expression import insert
 
-from character_frequency import __CACHE_DIRECTORY, __LANGUAGE_SOURCES
+from character_frequency import __CACHE_DIRECTORY, __LANGUAGE_SOURCES, accepted_words
 from language import Language
 from main import word_chain_bot
 from model import WordCacheModel
@@ -18,13 +17,12 @@ async def main():
     args = parser.parse_args()
     language = Language.from_language_code(args.language)
 
-    words = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
-    regex = re.compile(language.value.allowed_word_regex)
-    accepted_words = [word.lower() for word in words if regex.match(word.lower()) and not word.isupper()]
-    total_words = len(accepted_words)
+    extracted_words = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
+    words = accepted_words(extracted_words, language)
+    total_words = len(words)
 
     async with word_chain_bot.db_connection(locked=True) as connection:
-        for index, word in enumerate(accepted_words):
+        for index, word in enumerate(words):
             statement = insert(WordCacheModel).values(
                 word=word,
                 language=language.value.code
