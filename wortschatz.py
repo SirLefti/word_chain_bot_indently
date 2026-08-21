@@ -17,10 +17,10 @@ __LOGGER = logging.getLogger(__name__)
 
 
 class CorporaSize(str, Enum):
-    Size_10K = '10K',
-    Size_30K = '30K',
-    Size_100K = '100K',
-    Size_300K = '300K',
+    Size_10K = '10K'
+    Size_30K = '30K'
+    Size_100K = '100K'
+    Size_300K = '300K'
     Size_1M = '1M'
 
 
