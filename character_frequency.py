@@ -7,7 +7,7 @@ import string
 from collections import defaultdict
 from itertools import product
 from pathlib import Path
-from typing import Callable, Collection
+from typing import Callable
 
 from consts import GameMode
 from language import LANGUAGES_DIRECTORY, Language
@@ -26,21 +26,42 @@ class ComputedDefaultDict(defaultdict):
 
 __LOGGER = logging.getLogger(__name__)
 __CACHE_DIRECTORY = LANGUAGES_DIRECTORY / Path('cache')
-__DEFAULT_SIZE = CorporaSize.Size_30K.value
+__DEFAULT_SIZE = CorporaSize.Size_300K.value
+# English uses simple-wikipedia corpus
+# Icelandic has no 300K corpus, use 100K instead
 __LANGUAGE_SOURCES: dict[Language, str] = ComputedDefaultDict(lambda k: f'https://downloads.wortschatz-leipzig.de/corpora/{k.value.code_long}_wikipedia_2021_{__DEFAULT_SIZE}.tar.gz', {
-    Language.ENGLISH: f'https://downloads.wortschatz-leipzig.de/corpora/eng-simple_wikipedia_2021_{__DEFAULT_SIZE}.tar.gz'
+    Language.ENGLISH: f'https://downloads.wortschatz-leipzig.de/corpora/eng-simple_wikipedia_2021_{__DEFAULT_SIZE}.tar.gz',
+    Language.ICELANDIC: 'https://downloads.wortschatz-leipzig.de/corpora/isl_wikipedia_2021_100K.tar.gz'
 })
 
 
 def has_uppercase_beyond_first(word: str) -> bool:
     """
-    Detects abbreviations, initialisms and brand spellings by checking for capital letters past the first
-    character. Regularly capitalized compounds like `U-Boot` are covered on purpose.
+    Detects if the word has uppercase characters beyond the first character. It must be used on the raw corpus, not on
+    a processed lowercased version of the corpus. Ordinary capitalized words are accepted (sentence starts, proper
+    names, German nouns).
+
+    This rejects:
+
+    * abbreviations (e.g. NGO)
+    * plurals of abbreviations that do not satisfy ``word.isupper()`` (e.g. NGOs)
+    * internal capitals in brand names, surnames or unit symbols (e.g. iPhone, McLaren, kWh; they are not proper words)
+    * abbreviations in combinations (e.g. CD-Player)
+
+    As a side effect, it also rejects:
+
+    * combined capitalized words (e.g. American-Samoa; but the first parts are usually not rare on their own, rejecting
+      it is acceptable)
+    * German short forms with single character followed by hyphen (e.g. U-Boot; rejecting is acceptable because ``x-``
+      are irrelevant in hard mode, since words do not end with hyphens, and the first character is usually frequent
+      enough on its own that rejecting does not hurt the metric in any significant way)
+    * Capitalized Dutch digraphs (e.g. IJs; they usually appear also in a lowercased version, rejecting them does
+      not hurt the characters metric in any significant way)
     """
     return any(c.isupper() for c in word[1:])
 
 
-def accepted_words(words: Collection[str], language: Language) -> Collection[str]:
+def accepted_words(words: list[str], language: Language) -> set[str]:
     """
     Filters corpus words down to those usable for the given language and lowercases them.
     """
@@ -49,7 +70,7 @@ def accepted_words(words: Collection[str], language: Language) -> Collection[str
             if regex.match(word.lower()) and not has_uppercase_beyond_first(word)}
 
 
-def generate_token_scores(words: Collection[str], game_modes: Collection[GameMode]) -> dict[int, dict[str, float]]:
+def generate_token_scores(words: set[str], game_modes: set[GameMode]) -> dict[int, dict[str, float]]:
     scores: dict[int, dict[str, float]] = dict()
 
     for game_mode in game_modes:
@@ -76,7 +97,7 @@ async def run_for_language(language: Language):
     __LOGGER.info(f'analyzing for {language.value.code}')
     extracted_words = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
     words = accepted_words(extracted_words, language)
-    result = generate_token_scores(words, [game_mode for game_mode in GameMode])
+    result = generate_token_scores(words, {game_mode for game_mode in GameMode})
     with open(LANGUAGES_DIRECTORY / f'scores_{language.value.code}.json', 'w', encoding='utf-8') as export_file:
         json.dump(result, export_file, indent=4, sort_keys=True, ensure_ascii=False)
         __LOGGER.info(f'analyzed and exported for {language.value.code}')
