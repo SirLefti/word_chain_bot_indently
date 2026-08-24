@@ -13,7 +13,6 @@ from discord import Colour, Embed, Interaction, Object, app_commands
 from discord.ext.commands import AutoShardedBot, ExtensionError, ExtensionNotLoaded
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
-import character_frequency as cf
 from consts import (COG_NAME_ADMIN_CMDS, COG_NAME_COMMON, COG_NAME_GAME, COG_NAME_MANAGER_CMDS, COG_NAME_USER_CMDS,
                     COGS_LIST, LOGGER_NAME_MAIN, SETTINGS)
 
@@ -32,10 +31,6 @@ class WordChainBot(AutoShardedBot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
-
-        if SETTINGS.generate_language_on_start:
-            logger.info('generating language files on start')
-            asyncio.run(cf.main())
 
         super().__init__(command_prefix='!', intents=intents)
 
