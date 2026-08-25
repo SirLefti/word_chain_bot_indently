@@ -3,7 +3,8 @@ import asyncio
 
 from sqlalchemy.sql.expression import insert
 
-from character_frequency import __CACHE_DIRECTORY, __LANGUAGE_SOURCES, accepted_words
+from character_frequency import (__CACHE_DIRECTORY, __LANGUAGE_SOURCES, accepted_words,
+                                 words_with_more_than_n_occurrences)
 from language import Language
 from main import word_chain_bot
 from model import WordCacheModel
@@ -18,8 +19,8 @@ async def main():
     language = Language.from_language_code(args.language)
 
     extracted_words = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
-    words_with_more_than_one_occurrence = [word for (word, occurrences) in extracted_words.items() if occurrences > 1]
-    words = accepted_words(words_with_more_than_one_occurrence, language)
+    occurrence_gated_words = words_with_more_than_n_occurrences(extracted_words, 1, False)
+    words = accepted_words(occurrence_gated_words.keys(), language)
     total_words = len(words)
 
     async with word_chain_bot.db_connection(locked=True) as connection:

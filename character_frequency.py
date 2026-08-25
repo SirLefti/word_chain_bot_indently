@@ -7,7 +7,7 @@ import string
 from collections import defaultdict
 from itertools import product
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Collection
 
 from consts import GameMode
 from language import LANGUAGES_DIRECTORY, Language
@@ -61,7 +61,7 @@ def has_uppercase_beyond_first(word: str) -> bool:
     return any(c.isupper() for c in word[1:])
 
 
-def accepted_words(words: list[str], language: Language) -> set[str]:
+def accepted_words(words: Collection[str], language: Language) -> set[str]:
     """
     Filters corpus words down to those usable for the given language and lowercases them.
     """
@@ -70,7 +70,16 @@ def accepted_words(words: list[str], language: Language) -> set[str]:
             if regex.match(word.lower()) and not has_uppercase_beyond_first(word)}
 
 
-def generate_token_scores(words: set[str], game_modes: set[GameMode]) -> dict[int, dict[str, float]]:
+def words_with_more_than_n_occurrences(word_occurrences: dict[str, int], n: int, case_sensitive: bool) -> dict[str, int]:
+    d = defaultdict(lambda: 0)
+
+    for word, occurrence in word_occurrences.items():
+        d[word if case_sensitive else word.lower()] += occurrence
+
+    return {w: c for w, c in d.items() if c > n}
+
+
+def generate_token_scores(words: Collection[str], game_modes: Collection[GameMode]) -> dict[int, dict[str, float]]:
     scores: dict[int, dict[str, float]] = dict()
 
     for game_mode in game_modes:
@@ -93,11 +102,12 @@ def generate_token_scores(words: set[str], game_modes: set[GameMode]) -> dict[in
 
     return scores
 
+
 async def run_for_language(language: Language):
     __LOGGER.info(f'analyzing for {language.value.code}')
     extracted_words = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
-    words_with_more_than_one_occurrence = [word for (word, occurrences) in extracted_words.items() if occurrences > 1]
-    words = accepted_words(words_with_more_than_one_occurrence, language)
+    occurrence_gated_words = words_with_more_than_n_occurrences(extracted_words, 1, False)
+    words = accepted_words(occurrence_gated_words.keys(), language)
     result = generate_token_scores(words, {game_mode for game_mode in GameMode})
     with open(LANGUAGES_DIRECTORY / f'scores_{language.value.code}.json', 'w', encoding='utf-8') as export_file:
         json.dump(result, export_file, indent=4, sort_keys=True, ensure_ascii=False)

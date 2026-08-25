@@ -5,7 +5,6 @@ import pytest
 from consts import GameMode
 from language import Language
 
-
 ### ENGLISH
 
 @pytest.mark.parametrize("token", list(string.ascii_lowercase), ids=lambda c: f'token_{c}')
