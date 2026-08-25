@@ -18,7 +18,8 @@ async def main():
     language = Language.from_language_code(args.language)
 
     extracted_words = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
-    words = accepted_words(extracted_words, language)
+    words_with_more_than_one_occurrence = [word for (word, occurrences) in extracted_words.items() if occurrences > 1]
+    words = accepted_words(words_with_more_than_one_occurrence, language)
     total_words = len(words)
 
     async with word_chain_bot.db_connection(locked=True) as connection:

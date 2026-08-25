@@ -58,7 +58,7 @@ async def __download_and_extract_tar(url: str, extraction_directory: PathLike[st
     return extracted_directory
 
 
-async def __load_words(extracted_directory: PathLike[str] | str) -> list[str]:
+async def __load_words(extracted_directory: PathLike[str] | str) -> dict[str, int]:
     # Find the *-words.txt file inside the extracted directory
     words_file = next((os.path.join(extracted_directory, file) for file in os.listdir(extracted_directory)
                        if file.endswith("-words.txt")), None)
@@ -67,7 +67,7 @@ async def __load_words(extracted_directory: PathLike[str] | str) -> list[str]:
         raise FileNotFoundError("No *-words.txt file found in the extracted directory.")
 
     # Process the file
-    result = set()
+    result = {}
     async with aiofiles.open(words_file, "r", encoding="utf-8") as f:
         contents = await f.read()
         __LOGGER.info('word file read')
@@ -75,13 +75,13 @@ async def __load_words(extracted_directory: PathLike[str] | str) -> list[str]:
         # word-ids until 100 are usually special characters
         for line in contents.splitlines():
             parts = line.strip().split("\t")
-            if len(parts) >= 2:
-                result.add(parts[1])
+            if len(parts) >= 3:
+                result[parts[1]] = int(parts[2])
 
-    return list(result)
+    return result
 
 
-async def extract_words(url: str, cache_directory: PathLike[str] | str | None = None) -> list[str]:
+async def extract_words(url: str, cache_directory: PathLike[str] | str | None = None) -> dict[str, int]:
     if not cache_directory:
         with tempfile.TemporaryDirectory() as temp_directory:
             extracted_directory = await __download_and_extract_tar(url, temp_directory)

@@ -96,7 +96,8 @@ def generate_token_scores(words: set[str], game_modes: set[GameMode]) -> dict[in
 async def run_for_language(language: Language):
     __LOGGER.info(f'analyzing for {language.value.code}')
     extracted_words = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
-    words = accepted_words(extracted_words, language)
+    words_with_more_than_one_occurrence = [word for (word, occurrences) in extracted_words.items() if occurrences > 1]
+    words = accepted_words(words_with_more_than_one_occurrence, language)
     result = generate_token_scores(words, {game_mode for game_mode in GameMode})
     with open(LANGUAGES_DIRECTORY / f'scores_{language.value.code}.json', 'w', encoding='utf-8') as export_file:
         json.dump(result, export_file, indent=4, sort_keys=True, ensure_ascii=False)
