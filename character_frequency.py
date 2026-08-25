@@ -61,12 +61,14 @@ def has_uppercase_beyond_first(word: str) -> bool:
     return any(c.isupper() for c in word[1:])
 
 
-def accepted_words(words: Collection[str], language: Language) -> set[str]:
+def accepted_words(words: dict[str, int], language: Language) -> dict[str, int]:
     """
-    Filters corpus words down to those usable for the given language and lowercases them.
+    Filters corpus words down to those usable for the given language.
+    Requires words to be in original capitalization. Capitalization is unchanged in the result.
     """
     regex = re.compile(language.value.allowed_word_regex)
-    return {word.lower() for word in words
+
+    return {word: occurrence for word, occurrence in words.items()
             if regex.match(word.lower()) and not has_uppercase_beyond_first(word)}
 
 
@@ -106,9 +108,9 @@ def generate_token_scores(words: Collection[str], game_modes: Collection[GameMod
 async def run_for_language(language: Language):
     __LOGGER.info(f'analyzing for {language.value.code}')
     extracted_words = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
-    occurrence_gated_words = words_with_more_than_n_occurrences(extracted_words, 1, False)
-    words = accepted_words(occurrence_gated_words.keys(), language)
-    result = generate_token_scores(words, {game_mode for game_mode in GameMode})
+    filtered_words = accepted_words(extracted_words, language)
+    occurrence_gated_words = words_with_more_than_n_occurrences(filtered_words, 1, False)
+    result = generate_token_scores(occurrence_gated_words, {game_mode for game_mode in GameMode})
     with open(LANGUAGES_DIRECTORY / f'scores_{language.value.code}.json', 'w', encoding='utf-8') as export_file:
         json.dump(result, export_file, indent=4, sort_keys=True, ensure_ascii=False)
         __LOGGER.info(f'analyzed and exported for {language.value.code}')
