@@ -12,7 +12,7 @@ def test_en_normal_mode(token: str):
     language = Language.ENGLISH
     mode = GameMode.NORMAL
 
-    assert language.value.score_threshold[mode] <= language.value.first_token_scores[mode][token], f'failed for {token=}'
+    assert language.value.first_token_scores[mode][token] >= language.value.score_threshold[mode], f'failed for {token=}'
 
 
 @pytest.mark.parametrize("token", [
@@ -24,7 +24,7 @@ def test_en_hard_mode_expect_valid(token: str):
     language = Language.ENGLISH
     mode = GameMode.HARD
 
-    assert language.value.score_threshold[mode] <= language.value.first_token_scores[mode][token], f'failed for {token=}'
+    assert language.value.first_token_scores[mode][token] >= language.value.score_threshold[mode], f'failed for {token=}'
 
 
 @pytest.mark.parametrize("token", [
@@ -36,7 +36,7 @@ def test_en_hard_mode_expect_invalid(token: str):
     language = Language.ENGLISH
     mode = GameMode.HARD
 
-    assert language.value.score_threshold[mode] > language.value.first_token_scores[mode][token], f'failed for {token=}'
+    assert language.value.first_token_scores[mode][token] < language.value.score_threshold[mode], f'failed for {token=}'
 
 
 ### GERMAN
@@ -46,7 +46,7 @@ def test_de_normal_mode(token: str):
     language = Language.GERMAN
     mode = GameMode.NORMAL
 
-    assert language.value.score_threshold[mode] <= language.value.first_token_scores[mode][token], f'failed for {token=}'
+    assert language.value.first_token_scores[mode][token] >= language.value.score_threshold[mode], f'failed for {token=}'
 
 
 @pytest.mark.parametrize("token", ["ß"], ids=lambda c: f'token_{c}')
@@ -54,7 +54,7 @@ def test_de_normal_mode_expect_invalid(token: str):
     language = Language.GERMAN
     mode = GameMode.NORMAL
 
-    assert language.value.score_threshold[mode] > language.value.first_token_scores[mode][token], f'failed for {token=}'
+    assert language.value.first_token_scores[mode][token] < language.value.score_threshold[mode], f'failed for {token=}'
 
 
 @pytest.mark.parametrize("token", [
@@ -68,7 +68,7 @@ def test_de_hard_mode_expect_valid(token: str):
     language = Language.GERMAN
     mode = GameMode.HARD
 
-    assert language.value.score_threshold[mode] <= language.value.first_token_scores[mode][token], f'failed for {token=}'
+    assert language.value.first_token_scores[mode][token] >= language.value.score_threshold[mode], f'failed for {token=}'
 
 
 @pytest.mark.parametrize("token", [
@@ -81,4 +81,4 @@ def test_de_hard_mode_expect_invalid(token: str):
     language = Language.GERMAN
     mode = GameMode.HARD
 
-    assert language.value.score_threshold[mode] > language.value.first_token_scores[mode][token], f'failed for {token=}'
+    assert language.value.first_token_scores[mode][token] < language.value.score_threshold[mode], f'failed for {token=}'
