@@ -18,9 +18,9 @@ async def main():
     args = parser.parse_args()
     language = Language.from_language_code(args.language)
 
-    extracted_words = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
-    filtered_words = accepted_words(extracted_words, language)
-    occurrence_gated_words = words_with_more_than_n_occurrences(filtered_words, 1, False)
+    extracted_words_dict = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
+    language_gated_words = accepted_words(extracted_words_dict, language)
+    occurrence_gated_words = words_with_more_than_n_occurrences(language_gated_words, 1, False)
     total_words = len(occurrence_gated_words)
 
     async with word_chain_bot.db_connection(locked=True) as connection:

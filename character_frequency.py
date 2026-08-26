@@ -11,7 +11,7 @@ from typing import Callable, Collection
 
 from consts import GameMode
 from language import LANGUAGES_DIRECTORY, Language
-from wortschatz import CorporaSize, extract_words
+from wortschatz import CorporaSize, Word, extract_word_positions, extract_words
 
 
 class ComputedDefaultDict(defaultdict):
@@ -61,22 +61,27 @@ def has_uppercase_beyond_first(word: str) -> bool:
     return any(c.isupper() for c in word[1:])
 
 
-def accepted_words(words: dict[str, int], language: Language) -> dict[str, int]:
+def accepted_words(words: dict[int, Word], language: Language) -> dict[int, Word]:
     """
     Filters corpus words down to those usable for the given language.
     Requires words to be in original capitalization. Capitalization is unchanged in the result.
     """
     regex = re.compile(language.value.allowed_word_regex)
 
-    return {word: occurrence for word, occurrence in words.items()
-            if regex.match(word.lower()) and not has_uppercase_beyond_first(word)}
+    return {word_id: word for word_id, word in words.items()
+            if regex.match(word.content.lower()) and not has_uppercase_beyond_first(word.content)}
 
 
-def words_with_more_than_n_occurrences(word_occurrences: dict[str, int], n: int, case_sensitive: bool) -> dict[str, int]:
+def words_with_more_than_n_occurrences(words: dict[int, Word], n: int, case_sensitive: bool) -> dict[str, int]:
+    """
+    Aggregates occurrences per word and keeps the words above the given threshold. This is the stage that drops the
+    word-ids and, unless ``case_sensitive`` is set, merges capitalization variants into one entry, so every filter
+    that reads capitalization has to run before it.
+    """
     d = defaultdict(lambda: 0)
 
-    for word, occurrence in word_occurrences.items():
-        d[word if case_sensitive else word.lower()] += occurrence
+    for word in words.values():
+        d[word.content if case_sensitive else word.content.lower()] += word.occurrences
 
     return {w: c for w, c in d.items() if c > n}
 
@@ -107,9 +112,35 @@ def generate_token_scores(words: Collection[str], game_modes: Collection[GameMod
 
 async def run_for_language(language: Language):
     __LOGGER.info(f'analyzing for {language.value.code}')
-    extracted_words = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
-    filtered_words = accepted_words(extracted_words, language)
-    occurrence_gated_words = words_with_more_than_n_occurrences(filtered_words, 1, False)
+    extracted_words_dict = await extract_words(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
+    total_size = len(extracted_words_dict)
+    __LOGGER.info(f'extracted {total_size} words')
+
+    if not language.value.has_capitalized_common_nouns:
+        # filter capitalized words that are in the middle of the sentence (indicates proper noun and not common noun)
+        word_positions = await extract_word_positions(__LANGUAGE_SOURCES[language], __CACHE_DIRECTORY)
+        capitalization_gated_words_dict = {word_id: word for word_id, word in extracted_words_dict.items()
+                                           # pass if first character is not uppercase
+                                           # or only appears at first index in a sentence
+                                           if not word.content[0].isupper()
+                                           or sum(word_positions[word_id]) == 0}
+        capitalization_gated_size = len(capitalization_gated_words_dict)
+        capitalization_gated_fraction = capitalization_gated_size / total_size
+        __LOGGER.info(f'cap-gate keeps {capitalization_gated_size} words ({capitalization_gated_fraction:.2%})')
+    else:
+        # no gating if the language has all common nouns capitalized
+        capitalization_gated_words_dict = extracted_words_dict
+
+    language_gated_words = accepted_words(capitalization_gated_words_dict, language)
+    language_gated_size = len(language_gated_words)
+    language_gated_fraction = language_gated_size / total_size
+    __LOGGER.info(f'lang-gate keeps {language_gated_size} words ({language_gated_fraction:.2%})')
+
+    occurrence_gated_words = words_with_more_than_n_occurrences(language_gated_words, 1, False)
+    occurrence_gated_size = len(occurrence_gated_words)
+    occurrence_gated_fraction = occurrence_gated_size / total_size
+    __LOGGER.info(f'occ-gate keeps {occurrence_gated_size} words ({occurrence_gated_fraction:.2%})')
+
     result = generate_token_scores(occurrence_gated_words, {game_mode for game_mode in GameMode})
     with open(LANGUAGES_DIRECTORY / f'scores_{language.value.code}.json', 'w', encoding='utf-8') as export_file:
         json.dump(result, export_file, indent=4, sort_keys=True, ensure_ascii=False)

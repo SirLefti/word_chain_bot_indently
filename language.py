@@ -50,6 +50,7 @@ class LanguageInfo(BaseModel):
     code: str = Field(max_length=2, min_length=2) # set 1 ISO-639-1
     code_long: str = Field(max_length=3, min_length=3) # set 3 ISO-639-3
     allowed_word_regex: str
+    has_capitalized_common_nouns: bool = Field(default=False)
     first_token_scores: dict[GameMode, defaultdict[str, float]] = Field(default=DEFAULT_FIRST_TOKEN_SCORES)
     score_threshold: dict[GameMode, float] = Field(default={
         GameMode.NORMAL: DEFAULT_THRESHOLD_NORMAL,
@@ -110,7 +111,7 @@ class Language(Enum):
     # Latin script
     ENGLISH = LanguageInfo(code="en", code_long="eng", allowed_word_regex=EN_REGEX, first_token_scores=EN_FIRST_TOKEN_SCORES)
     FRENCH = LanguageInfo(code='fr', code_long="fra", allowed_word_regex=FR_REGEX, first_token_scores=FR_FIRST_TOKEN_SCORES)
-    GERMAN = LanguageInfo(code='de', code_long="deu", allowed_word_regex=DE_REGEX, first_token_scores=DE_FIRST_TOKEN_SCORES)
+    GERMAN = LanguageInfo(code='de', code_long="deu", allowed_word_regex=DE_REGEX, first_token_scores=DE_FIRST_TOKEN_SCORES, has_capitalized_common_nouns=True)
     DUTCH = LanguageInfo(code='nl', code_long="nld", allowed_word_regex=NL_REGEX, first_token_scores=NL_FIRST_TOKEN_SCORES)
     SPANISH = LanguageInfo(code='es', code_long="spa", allowed_word_regex=ES_REGEX, first_token_scores=ES_FIRST_TOKEN_SCORES)
     PORTUGUESE = LanguageInfo(code='pt', code_long="por", allowed_word_regex=PT_REGEX, first_token_scores=PT_FIRST_TOKEN_SCORES)
