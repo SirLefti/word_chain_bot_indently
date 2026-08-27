@@ -482,6 +482,7 @@ https://discord.gg/yhbzVGBNw3''', colour=Colour.pink())
 `/whitelist remove` - Remove a word from the whitelist of this server.
 `/whitelist show` - Show the whitelist words for this server.
 
+`/health_check` - Performs a health check on your server to check if the permissions are set correctly.
 `/reset_stats` - Resets all your server's stats, but your configuration is kept.'''
 
             guild = interaction.guild
