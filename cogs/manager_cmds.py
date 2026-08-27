@@ -109,7 +109,7 @@ class ManagerCommandsCog(Cog, name=COG_NAME_MANAGER_CMDS):
     # ----------------------------------------------------------------------------------------------------------------
 
     @app_commands.command(name='health_check', description='Performs a health check on your server')
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.guild_only()
     async def health_check(self, interaction: Interaction):
         await interaction.response.defer()
