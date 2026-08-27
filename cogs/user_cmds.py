@@ -381,6 +381,8 @@ permission to run this command.)
 
 This will be enough to let users play the game in your server. Send any word to start the chain.
 
+If it doesn't work, managers can use the `/health_check` command to check if the permissions are set correctly.
+
 ## Highly recommended setup
 - Disable the `Add reactions` permissions for `@everyone` in the game channel.
 > **Why do we recommend this?**
