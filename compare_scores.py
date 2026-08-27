@@ -5,6 +5,11 @@ Both directories are expected to hold ``scores_<language code>.json`` files. The
 mode at a time, tokens in alphabetical order, paged. Per token, the part both score sets have in common is drawn in a
 neutral color, the difference on top of it in green if set B scores higher and in red if set A scores higher.
 
+Each set is judged by its own threshold, because the threshold is part of a score set rather than a constant: main
+runs normal mode at 0.01 and the branch at 0.005. With a single line, tokens whose score did not change at all appear
+to flip when in truth only the threshold moved, so the summary attributes every flip to either the score or the
+threshold.
+
 Run without arguments for an empty window and pick the directories interactively, or preselect any of the fields via
 command line arguments.
 """
@@ -21,6 +26,7 @@ from typing import NamedTuple
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
 from consts import GameMode
@@ -47,6 +53,17 @@ COLOR_B_HIGHER = '#2ca02c'
 COLOR_A_HIGHER = '#d62728'
 COLOR_THRESHOLD = '#1f77b4'
 COLOR_FLIP = '#ff7f0e'
+COLOR_FLIP_THRESHOLD = '#9467bd'
+
+
+class ThresholdPair(NamedTuple):
+    """The threshold each set is judged by. Equal values mean the comparison is about the scores alone."""
+    a: float
+    b: float
+
+    @property
+    def equal(self) -> bool:
+        return self.a == self.b
 
 
 class TokenComparison(NamedTuple):
@@ -64,13 +81,52 @@ class TokenComparison(NamedTuple):
         """Positive if set B scores higher, negative if set A scores higher."""
         return self.score_b - self.score_a
 
-    def flips_at(self, threshold: float) -> bool:
-        """Whether both sets end up on opposite sides of the threshold, which is the actual behavioral change."""
-        return (self.score_a >= threshold) != (self.score_b >= threshold)
+    def passes_a(self, thresholds: ThresholdPair) -> bool:
+        return self.score_a >= thresholds.a
+
+    def passes_b(self, thresholds: ThresholdPair) -> bool:
+        return self.score_b >= thresholds.b
+
+    def flips(self, thresholds: ThresholdPair) -> bool:
+        """Whether both sets end up on opposite sides of their own threshold, which is the behavioral change."""
+        return self.passes_a(thresholds) != self.passes_b(thresholds)
+
+    def score_effect(self, thresholds: ThresholdPair) -> bool:
+        """Whether the score change alone would flip the verdict, i.e. both scores judged by set A's threshold."""
+        return (self.score_a >= thresholds.a) != (self.score_b >= thresholds.a)
+
+    def threshold_effect(self, thresholds: ThresholdPair) -> bool:
+        """Whether the threshold change alone would flip the verdict, i.e. both thresholds judged on set B's score."""
+        return (self.score_b >= thresholds.a) != (self.score_b >= thresholds.b)
+
+    def flip_cause(self, thresholds: ThresholdPair) -> str | None:
+        """
+        What made the token flip, or ``None`` if it did not.
+
+        Exactly one of the two effects can fire on a flipped token, because a flip is their exclusive or: either the
+        score crossed a fixed line or the line crossed a fixed score. Both firing cancels out, see ``cancels``.
+        """
+        if not self.flips(thresholds):
+            return None
+        return 'score' if self.score_effect(thresholds) else 'threshold'
+
+    def cancels(self, thresholds: ThresholdPair) -> bool:
+        """
+        Both effects fire and hide each other, so the token does not flip.
+
+        These are the ones to watch when a threshold is lowered to compensate for a score set that scores lower: the
+        verdict only survives because the threshold moved along with the score.
+        """
+        return self.score_effect(thresholds) and self.threshold_effect(thresholds)
 
 
 def in_game_threshold(language_code: str, game_mode: GameMode) -> float:
-    """The threshold the bot applies in game, which the threshold input field starts from for every selection."""
+    """
+    The threshold this working copy applies in game, which both threshold fields start from for every selection.
+
+    Only one value is available, since a score set on disk carries no threshold of its own. Set A's threshold has to
+    be typed in (or passed as ``--threshold-a``) whenever it differs, e.g. 0.01 for normal mode scores from main.
+    """
     language = next((language for language in Language if language.value.code == language_code), None)
     if language is None:
         return FALLBACK_THRESHOLDS[game_mode]
@@ -113,7 +169,7 @@ def compare_scores(scores_a: dict[str, float], scores_b: dict[str, float], hide_
     return comparisons
 
 
-def summarize(comparisons: list[TokenComparison], threshold: float) -> str:
+def summarize(comparisons: list[TokenComparison], thresholds: ThresholdPair) -> str:
     if not comparisons:
         return 'no tokens to compare'
 
@@ -122,29 +178,34 @@ def summarize(comparisons: list[TokenComparison], threshold: float) -> str:
     b_higher = sum(1 for comparison in comparisons if comparison.difference > 0)
     a_higher = sum(1 for comparison in comparisons if comparison.difference < 0)
     total_difference = sum(abs(comparison.difference) for comparison in comparisons)
-    passing_a = sum(1 for comparison in comparisons if comparison.score_a >= threshold)
-    passing_b = sum(1 for comparison in comparisons if comparison.score_b >= threshold)
-    flips = sum(1 for comparison in comparisons if comparison.flips_at(threshold))
+    passing_a = sum(1 for comparison in comparisons if comparison.passes_a(thresholds))
+    passing_b = sum(1 for comparison in comparisons if comparison.passes_b(thresholds))
+    causes = [comparison.flip_cause(thresholds) for comparison in comparisons]
+    score_flips = causes.count('score')
+    threshold_flips = causes.count('threshold')
+    cancelled = sum(1 for comparison in comparisons if comparison.cancels(thresholds))
 
     return (f'{len(comparisons)} tokens    '
             f'A: mean {statistics.mean(scores_a):.4f}, median {statistics.median(scores_a):.4f}    '
             f'B: mean {statistics.mean(scores_b):.4f}, median {statistics.median(scores_b):.4f}\n'
             f'B > A: {b_higher}    A > B: {a_higher}    equal: {len(comparisons) - a_higher - b_higher}    '
-            f'sum of differences: {total_difference:.4f}    '
-            f'at or above threshold: A {passing_a}, B {passing_b}, flipped {flips}')
+            f'sum of differences: {total_difference:.4f}\n'
+            f'at or above threshold: A {passing_a} (>= {thresholds.a:g}), B {passing_b} (>= {thresholds.b:g})    '
+            f'flipped {score_flips + threshold_flips} (by score {score_flips}, by threshold {threshold_flips})    '
+            f'held only by the threshold change: {cancelled}')
 
 
 class ComparisonApp(tk.Tk):
 
     def __init__(self, directory_a: Path | None, directory_b: Path | None, language_code: str | None,
-                 game_mode: GameMode, threshold: float | None, page_size: int, page: int, log_scale: bool,
-                 hide_empty: bool):
+                 game_mode: GameMode, threshold_a: float | None, threshold_b: float | None, page_size: int, page: int,
+                 log_scale: bool, hide_empty: bool):
         super().__init__()
         self.title('token score comparison')
         self.geometry('1400x800')
 
-        self.thresholds: dict[tuple[str, GameMode], float] = {}
-        """Thresholds edited in the input field, per language and game mode, starting from the in game ones."""
+        self.thresholds: dict[tuple[str, GameMode], ThresholdPair] = {}
+        """Thresholds edited in the input fields, per language and game mode, starting from the in game ones."""
         self.selection: tuple[str, GameMode] = (language_code or '', game_mode)
         self.page = max(0, page)
         self.comparisons: list[TokenComparison] = []
@@ -153,7 +214,8 @@ class ComparisonApp(tk.Tk):
         self.directory_b_var = tk.StringVar(value=str(directory_b) if directory_b else '')
         self.language_var = tk.StringVar(value=language_code or '')
         self.game_mode_var = tk.StringVar(value=game_mode.name.lower())
-        self.threshold_var = tk.StringVar()
+        self.threshold_a_var = tk.StringVar()
+        self.threshold_b_var = tk.StringVar()
         self.page_size_var = tk.StringVar(value=str(page_size))
         self.log_scale_var = tk.BooleanVar(value=log_scale)
         self.hide_empty_var = tk.BooleanVar(value=hide_empty)
@@ -168,8 +230,11 @@ class ComparisonApp(tk.Tk):
         self.bind('<Next>', lambda _: self.__change_page(1))
 
         self.refresh_languages()
-        if threshold is not None:
-            self.thresholds[(self.language_var.get(), game_mode)] = threshold
+        if threshold_a is not None or threshold_b is not None:
+            in_game = in_game_threshold(self.language_var.get(), game_mode)
+            self.thresholds[(self.language_var.get(), game_mode)] = ThresholdPair(
+                threshold_a if threshold_a is not None else in_game,
+                threshold_b if threshold_b is not None else in_game)
         self.__adopt_selection()
         self.reload()
 
@@ -206,13 +271,14 @@ class ComparisonApp(tk.Tk):
         game_mode_box.pack(side=tk.LEFT, padx=(4, 12))
         game_mode_box.bind('<<ComboboxSelected>>', lambda _: self.__on_selection_changed())
 
-        ttk.Label(selectors, text='threshold').pack(side=tk.LEFT)
-        threshold_entry = ttk.Entry(selectors, textvariable=self.threshold_var, width=10)
-        threshold_entry.pack(side=tk.LEFT, padx=(4, 4))
-        threshold_entry.bind('<Return>', lambda _: self.redraw())
-        threshold_entry.bind('<FocusOut>', lambda _: self.redraw())
+        for label, variable in [('threshold A', self.threshold_a_var), ('threshold B', self.threshold_b_var)]:
+            ttk.Label(selectors, text=label).pack(side=tk.LEFT)
+            threshold_entry = ttk.Entry(selectors, textvariable=variable, width=10)
+            threshold_entry.pack(side=tk.LEFT, padx=(4, 8))
+            threshold_entry.bind('<Return>', lambda _: self.redraw())
+            threshold_entry.bind('<FocusOut>', lambda _: self.redraw())
         ttk.Button(selectors, text='reset', width=6,
-                   command=self.__reset_threshold).pack(side=tk.LEFT, padx=(0, 12))
+                   command=self.__reset_thresholds).pack(side=tk.LEFT, padx=(0, 12))
 
         ttk.Label(selectors, text='tokens per page').pack(side=tk.LEFT)
         page_size_box = ttk.Spinbox(selectors, textvariable=self.page_size_var, from_=5, to=200, increment=5, width=6,
@@ -258,19 +324,24 @@ class ComparisonApp(tk.Tk):
             self.reload()
 
     def __on_selection_changed(self) -> None:
-        """Language and game mode have their own threshold each, so the input field follows the selection."""
-        self.threshold()  # keeps whatever was typed for the selection we are leaving
+        """Language and game mode have their own thresholds each, so the input fields follow the selection."""
+        self.thresholds_of_selection()  # keeps whatever was typed for the selection we are leaving
         self.__adopt_selection()
         self.page = 0
         self.reload()
 
     def __adopt_selection(self) -> None:
         self.selection = self.language_var.get(), self.game_mode()
-        self.threshold_var.set(f'{self.thresholds.get(self.selection, in_game_threshold(*self.selection)):g}')
+        in_game = in_game_threshold(*self.selection)
+        thresholds = self.thresholds.get(self.selection, ThresholdPair(in_game, in_game))
+        self.threshold_a_var.set(f'{thresholds.a:g}')
+        self.threshold_b_var.set(f'{thresholds.b:g}')
 
-    def __reset_threshold(self) -> None:
+    def __reset_thresholds(self) -> None:
         self.thresholds.pop(self.selection, None)
-        self.threshold_var.set(f'{in_game_threshold(*self.selection):g}')
+        in_game = in_game_threshold(*self.selection)
+        self.threshold_a_var.set(f'{in_game:g}')
+        self.threshold_b_var.set(f'{in_game:g}')
         self.redraw()
 
     def __change_page(self, offset: int) -> None:
@@ -284,15 +355,21 @@ class ComparisonApp(tk.Tk):
     def game_mode(self) -> GameMode:
         return GAME_MODES[self.game_mode_var.get()]
 
-    def threshold(self) -> float:
-        """Reads the threshold input field, falling back to the last valid value of the current selection."""
-        try:
-            value = float(self.threshold_var.get().replace(',', '.'))
-        except ValueError:
-            return self.thresholds.get(self.selection, in_game_threshold(*self.selection))
+    def thresholds_of_selection(self) -> ThresholdPair:
+        """Reads both threshold input fields, falling back per field to the last valid value of the selection."""
+        in_game = in_game_threshold(*self.selection)
+        previous = self.thresholds.get(self.selection, ThresholdPair(in_game, in_game))
 
-        self.thresholds[self.selection] = value
-        return value
+        values = []
+        for variable, fallback in [(self.threshold_a_var, previous.a), (self.threshold_b_var, previous.b)]:
+            try:
+                values.append(float(variable.get().replace(',', '.')))
+            except ValueError:
+                values.append(fallback)
+
+        thresholds = ThresholdPair(*values)
+        self.thresholds[self.selection] = thresholds
+        return thresholds
 
     def page_size(self) -> int:
         try:
@@ -332,13 +409,13 @@ class ComparisonApp(tk.Tk):
 
     def redraw(self) -> None:
         """Renders the current page. Threshold, page size, scale and paging changes need this, but no re-read."""
-        threshold = self.threshold()
+        thresholds = self.thresholds_of_selection()
         page_size = self.page_size()
         total_pages = max(1, ceil(len(self.comparisons) / page_size))
         self.page = min(self.page, total_pages - 1)
         page = self.comparisons[self.page * page_size:(self.page + 1) * page_size]
         self.page_var.set(f'page {self.page + 1} / {total_pages}')
-        self.summary_var.set(summarize(self.comparisons, threshold))
+        self.summary_var.set(summarize(self.comparisons, thresholds))
 
         self.axes.clear()
         if not page:
@@ -355,23 +432,29 @@ class ComparisonApp(tk.Tk):
         gain_a = [max(0.0, -comparison.difference) for comparison in page]
 
         for position, comparison in zip(positions, page):
-            if comparison.flips_at(threshold):
-                self.axes.axvspan(position - 0.5, position + 0.5, color=COLOR_FLIP, alpha=0.15, zorder=0)
+            cause = comparison.flip_cause(thresholds)
+            if cause is not None:
+                color = COLOR_FLIP if cause == 'score' else COLOR_FLIP_THRESHOLD
+                self.axes.axvspan(position - 0.5, position + 0.5, color=color, alpha=0.15, zorder=0)
 
         self.axes.bar(positions, common, color=COLOR_COMMON, zorder=2)
         self.axes.bar(positions, gain_b, bottom=common, color=COLOR_B_HIGHER, zorder=2)
         self.axes.bar(positions, gain_a, bottom=common, color=COLOR_A_HIGHER, zorder=2)
-        self.axes.axhline(threshold, color=COLOR_THRESHOLD, linestyle='--', linewidth=1, zorder=3)
+        # one line per set, since a token can flip on the threshold change alone when the scores are equal
+        self.axes.axhline(thresholds.b, color=COLOR_THRESHOLD, linestyle='--', linewidth=1, zorder=3)
+        if not thresholds.equal:
+            self.axes.axhline(thresholds.a, color=COLOR_THRESHOLD, linestyle=':', linewidth=1.4, zorder=3)
 
         if self.log_scale_var.get():
             self.axes.set_yscale('log')
             positive = [score for comparison in page for score in (comparison.score_a, comparison.score_b) if score > 0]
-            self.axes.set_ylim(bottom=min([*positive, threshold]) / 2)
+            self.axes.set_ylim(bottom=min([*positive, thresholds.a, thresholds.b]) / 2)
 
         self.axes.set_xticks(list(positions), [comparison.token for comparison in page], family='monospace')
         for label, comparison in zip(self.axes.get_xticklabels(), page):
-            if comparison.flips_at(threshold):
-                label.set_color(COLOR_FLIP)
+            cause = comparison.flip_cause(thresholds)
+            if cause is not None:
+                label.set_color(COLOR_FLIP if cause == 'score' else COLOR_FLIP_THRESHOLD)
                 label.set_fontweight('bold')
 
         self.axes.set_xlim(-0.75, len(page) - 0.25)
@@ -379,12 +462,20 @@ class ComparisonApp(tk.Tk):
         self.axes.set_title(f'{self.language_var.get()} · {self.game_mode_var.get()} mode · '
                             f'page {self.page + 1} of {total_pages}')
         self.axes.grid(axis='y', alpha=0.3, zorder=0)
-        self.axes.legend(handles=[Patch(color=COLOR_COMMON, label='common part'),
-                                  Patch(color=COLOR_B_HIGHER, label='B higher'),
-                                  Patch(color=COLOR_A_HIGHER, label='A higher'),
-                                  Patch(color=COLOR_FLIP, alpha=0.15, label='crosses threshold'),
-                                  Patch(color=COLOR_THRESHOLD, label=f'threshold {threshold:g}')],
-                         loc='upper left', bbox_to_anchor=(1.01, 1), framealpha=0.9)
+        handles: list[Patch | Line2D] = [Patch(color=COLOR_COMMON, label='common part'),
+                   Patch(color=COLOR_A_HIGHER, label='A higher'),
+                   Patch(color=COLOR_B_HIGHER, label='B higher'),
+                   Patch(color=COLOR_FLIP, alpha=0.15, label='flips by score')]
+        if not thresholds.equal:
+            handles.append(Patch(color=COLOR_FLIP_THRESHOLD, alpha=0.15, label='flips by threshold'))
+            handles.append(Line2D([], [], color=COLOR_THRESHOLD, linestyle=':',
+                                  label=f'threshold A {thresholds.a:g}'))
+            handles.append(Line2D([], [], color=COLOR_THRESHOLD, linestyle='--',
+                                  label=f'threshold B {thresholds.b:g}'))
+        else:
+            handles.append(Line2D([], [], color=COLOR_THRESHOLD, linestyle='--',
+                                  label=f'threshold {thresholds.b:g}'))
+        self.axes.legend(handles=handles, loc='upper left', bbox_to_anchor=(1.01, 1), framealpha=0.9)
         self.canvas.draw_idle()
 
 
@@ -396,7 +487,9 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('-m', '--mode', choices=list(GAME_MODES), default=GameMode.NORMAL.name.lower(),
                         help='game mode to preselect')
     parser.add_argument('-t', '--threshold', type=float, default=None,
-                        help='threshold to start with, defaults to the one the bot uses in game')
+                        help='threshold to start with for both sets, defaults to the one the bot uses in game')
+    parser.add_argument('--threshold-a', type=float, default=None, help='threshold set A is judged by')
+    parser.add_argument('--threshold-b', type=float, default=None, help='threshold set B is judged by')
     parser.add_argument('-p', '--page-size', type=int, default=DEFAULT_PAGE_SIZE, help='tokens shown per page')
     parser.add_argument('--page', type=int, default=1, help='page to start on, one based')
     parser.add_argument('--log', action='store_true', help='start with a logarithmic score axis')
@@ -411,7 +504,9 @@ def main() -> None:
             raise SystemExit(f'{name}: {directory} is not a directory')
 
     app = ComparisonApp(directory_a=arguments.dir_a, directory_b=arguments.dir_b, language_code=arguments.language,
-                        game_mode=GAME_MODES[arguments.mode], threshold=arguments.threshold,
+                        game_mode=GAME_MODES[arguments.mode],
+                        threshold_a=arguments.threshold_a if arguments.threshold_a is not None else arguments.threshold,
+                        threshold_b=arguments.threshold_b if arguments.threshold_b is not None else arguments.threshold,
                         page_size=arguments.page_size, page=arguments.page - 1, log_scale=arguments.log,
                         hide_empty=arguments.hide_empty)
     app.mainloop()
