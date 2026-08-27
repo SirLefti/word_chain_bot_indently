@@ -502,7 +502,7 @@ https://discord.gg/yhbzVGBNw3''', colour=Colour.pink())
 `/purge_data user` - Remove all data associated with a user.
 `/reset_config` - Resets all data of a server and provides a fresh config.
 `/list_servers` - Exports a list with all server names, server IDs and the owners user ID.
-`/health_check` - Performs a health check on a server to check if the permissions are set correctly.
+`/admin_health_check` - Performs a health check on a server to check if the permissions are set correctly.
 `/logging status` - Shows the status of the loggers.
 `/logging enable_all` - Enables the loggers.
 `/logging disable_all` - Disables the loggers.
