@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from consts import COG_NAME_COMMON, COG_NAME_MANAGER_CMDS, LOGGER_NAME_MANAGER_COG, GameMode
 from language import Language
-from model import BlacklistModel, GameModeState, MemberModel, WhitelistModel
+from model import BlacklistModel, GameModeState, MemberModel, WhitelistModel, ServerConfig, ServerConfigModel
 
 if TYPE_CHECKING:
     from cogs.common import CommonCog
@@ -104,6 +104,31 @@ class ManagerCommandsCog(Cog, name=COG_NAME_MANAGER_CMDS):
                                    description=f'''There was an error. Changes might not have been saved.''')
 
         await interaction.followup.send(embed=emb)
+
+    # ----------------------------------------------------------------------------------------------------------------
+
+    @app_commands.command(name='health_check', description='Performs a health check on your server')
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.guild_only()
+    async def health_check(self, interaction: Interaction):
+        await interaction.response.defer()
+
+        guild = interaction.guild
+
+        if guild is None:
+            await interaction.followup.send('Guild not found!')
+            return
+
+        items: list[str] = [
+            f'{guild.name} ({guild.id})'
+        ]
+
+        bot_member = guild.get_member(self.bot.user.id)
+        config = self.common.server_configs[guild.id]
+
+        items.extend(self.common.permission_checks_for_config(config, bot_member))
+
+        await interaction.followup.send('\n'.join(items))
 
     # ================================================================================================================
 
