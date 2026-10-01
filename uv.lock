@@ -1746,7 +1746,7 @@ viz = [
 [package.metadata]
 requires-dist = [
     { name = "aiofiles", specifier = ">=25.1.0,<26.0.0" },
-    { name = "aiohttp", specifier = ">=3.14.2" },
+    { name = "aiohttp", specifier = ">=3.14.2,<4.0.0" },
     { name = "aiosqlite", specifier = ">=0.21.0,<1.0.0" },
     { name = "alembic", specifier = ">=1.16.5,<2.0.0" },
     { name = "beautifulsoup4", specifier = ">=4.14.3" },
