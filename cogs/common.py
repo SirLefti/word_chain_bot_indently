@@ -1,6 +1,7 @@
 """Cog that contains common logic and infrastructure."""
 from __future__ import annotations
 
+import asyncio
 import concurrent.futures
 import inspect
 import logging
@@ -12,11 +13,13 @@ from concurrent.futures import Future
 from enum import Enum
 from json import JSONDecodeError
 from logging.config import fileConfig
+from multiprocessing.forkserver import read_signed
 from typing import TYPE_CHECKING, List, Optional
 
 import aiohttp
 import discord
-from aiohttp import ClientConnectorError, ServerTimeoutError, ClientConnectionError, ServerDisconnectedError
+from aiohttp import ClientConnectorError, ServerTimeoutError, ClientConnectionError, ServerDisconnectedError, \
+    ClientSession
 from bs4 import BeautifulSoup
 from discord import Guild, Member, Permissions
 from discord.ext import commands
@@ -548,32 +551,39 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
         headers: dict = {
             "User-Agent": "word-chain-bot"
         }
+
+        async def fetch(s: ClientSession, v: str) -> DefinitionResult | None:
+            url: str = f"https://en.wiktionary.org/api/rest_v1/page/definition/{v}?redirect=true"
+
+            try:
+                async with s.get(url=url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return DefinitionResult.model_validate(data)
+
+            except TimeoutError:
+                logger.error('Timeout error raised when trying to get the definition query result.')
+            except ClientConnectionError:
+                logger.error('Connection failed when trying to get the definition query result.')
+            except Exception as ex:
+                logger.error(f'An exception was raised while getting the definition query result:\n{ex}')
+                return None
+
         async with aiohttp.ClientSession(headers=headers) as session:
-            for variation in sorted(variations, reverse=True):
-                url: str = f"https://en.wiktionary.org/api/rest_v1/page/definition/{variation}?redirect=true"
+            responses = await asyncio.gather(*(fetch(session, variation) for variation in sorted(variations, reverse=True)))
 
-                try:
-                    async with session.get(url=url) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            converted = DefinitionResult.model_validate(data)
+            for converted in responses:
+                converted: DefinitionResult | None
+                if converted is None:
+                    failed += 1
+                    continue
+                for language in languages:
+                    if language.value.code in converted.root:
+                        if language in result:
+                            result[language].extend(converted.root[language.value.code])
+                        else:
+                            result[language] = converted.root[language.value.code]
 
-                            for language in languages:
-                                if language.value.code in converted.root:
-                                    if language in result:
-                                        result[language].extend(converted.root[language.value.code])
-                                    else:
-                                        result[language] = converted.root[language.value.code]
-
-                except TimeoutError:
-                    logger.error('Timeout error raised when trying to get the definition query result.')
-                    failed += 1
-                except ClientConnectionError:
-                    logger.error('Connection failed when trying to get the definition query result.')
-                    failed += 1
-                except Exception as ex:
-                    logger.error(f'An exception was raised while getting the definition query result:\n{ex}')
-                    failed += 1
 
         if len(variations) == failed:
             # if all failed, there must be an issue, thus we return None here
