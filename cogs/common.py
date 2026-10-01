@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, List, Optional
 
 import aiohttp
 import discord
-from aiohttp import (ClientConnectionError, ClientSession)
+from aiohttp import ClientConnectionError, ClientSession, ClientTimeout
 from bs4 import BeautifulSoup
 from discord import Guild, Member, Permissions
 from discord.ext import commands
@@ -558,6 +558,7 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
                     if response.status == 200:
                         data = await response.json()
                         return DefinitionResult.model_validate(data)
+                    return DefinitionResult.model_validate({})
 
             except TimeoutError:
                 logger.error('Timeout error raised when trying to get the definition query result.')
@@ -565,9 +566,9 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
                 logger.error('Connection failed when trying to get the definition query result.')
             except Exception as ex:
                 logger.error(f'An exception was raised while getting the definition query result:\n{ex}')
-                return None
+            return None
 
-        async with aiohttp.ClientSession(headers=headers) as session:
+        async with aiohttp.ClientSession(headers=headers, timeout=ClientTimeout(total=5)) as session:
             responses = await asyncio.gather(*(fetch(session, variation) for variation in sorted(variations, reverse=True)))
 
             for converted in responses:
