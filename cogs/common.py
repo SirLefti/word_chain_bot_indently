@@ -552,8 +552,8 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
             for variation in sorted(variations, reverse=True):
                 url: str = f"https://en.wiktionary.org/api/rest_v1/page/definition/{variation}?redirect=true"
 
-                async with session.get(url=url) as response:
-                    try:
+                try:
+                    async with session.get(url=url) as response:
                         if response.status == 200:
                             data = await response.json()
                             converted = DefinitionResult.model_validate(data)
@@ -565,18 +565,18 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
                                     else:
                                         result[language] = converted.root[language.value.code]
 
-                    except ClientConnectionError:
-                        logger.error('Connection failed when trying to get the definition query result.')
-                        failed += 1
-                    except ServerDisconnectedError:
-                        logger.error('Server disconnected when trying to get the definition query result.')
-                        failed += 1
-                    except ServerTimeoutError:
-                        logger.error('Timeout error raised when trying to get the definition query result.')
-                        failed += 1
-                    except Exception as ex:
-                        logger.error(f'An exception was raised while getting the definition query result:\n{ex}')
-                        failed += 1
+                except ClientConnectionError:
+                    logger.error('Connection failed when trying to get the definition query result.')
+                    failed += 1
+                except ServerDisconnectedError:
+                    logger.error('Server disconnected when trying to get the definition query result.')
+                    failed += 1
+                except ServerTimeoutError:
+                    logger.error('Timeout error raised when trying to get the definition query result.')
+                    failed += 1
+                except Exception as ex:
+                    logger.error(f'An exception was raised while getting the definition query result:\n{ex}')
+                    failed += 1
 
         if len(variations) == failed:
             # if all failed, there must be an issue, thus we return None here
