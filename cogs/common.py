@@ -13,13 +13,11 @@ from concurrent.futures import Future
 from enum import Enum
 from json import JSONDecodeError
 from logging.config import fileConfig
-from multiprocessing.forkserver import read_signed
 from typing import TYPE_CHECKING, List, Optional
 
 import aiohttp
 import discord
-from aiohttp import ClientConnectorError, ServerTimeoutError, ClientConnectionError, ServerDisconnectedError, \
-    ClientSession
+from aiohttp import (ClientConnectionError, ClientSession)
 from bs4 import BeautifulSoup
 from discord import Guild, Member, Permissions
 from discord.ext import commands
