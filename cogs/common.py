@@ -532,8 +532,8 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
 
         Returns
         -------
-        list[concurrent.futures.Future]
-              A list of Future objects for the API query, one for each language.
+        dict[Language, list[Definition]] | None
+              The definitions found per language, or None if every query failed.
         """
         # Create common variations because wiktionary is case-sensitive
         variations = set()
