@@ -14,7 +14,9 @@ from json import JSONDecodeError
 from logging.config import fileConfig
 from typing import TYPE_CHECKING, List, Optional
 
+import aiohttp
 import discord
+from aiohttp import ClientConnectorError, ServerTimeoutError, ClientConnectionError, ServerDisconnectedError
 from bs4 import BeautifulSoup
 from discord import Guild, Member, Permissions
 from discord.ext import commands
@@ -517,7 +519,7 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
     # ---------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def query_wiktionary_definitions(word: str, languages: List[Language]) -> dict[Language, list[Definition]] | None:
+    async def query_wiktionary_definitions(word: str, languages: List[Language]) -> dict[Language, list[Definition]] | None:
         """
         Queries the wiktionary API to find the definition of a given word for given languages.
 
@@ -543,35 +545,38 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
         result: dict[Language, list[Definition]] = {}
         failed = 0
 
-        for variation in sorted(variations, reverse=True):
-            url: str = f"https://en.wiktionary.org/api/rest_v1/page/definition/{variation}?redirect=true"
-            headers: dict = {
-                "User-Agent": "word-chain-bot"
-            }
+        headers: dict = {
+            "User-Agent": "word-chain-bot"
+        }
+        async with aiohttp.ClientSession(headers=headers) as session:
+            for variation in sorted(variations, reverse=True):
+                url: str = f"https://en.wiktionary.org/api/rest_v1/page/definition/{variation}?redirect=true"
 
-            session: FuturesSession = FuturesSession()
-            future: Future = session.get(url=url, headers=headers)
+                async with session.get(url=url) as response:
+                    try:
+                        if response.status == 200:
+                            data = await response.json()
+                            converted = DefinitionResult.model_validate(data)
 
-            try:
-                response = future.result(5)
+                            for language in languages:
+                                if language.value.code in converted.root:
+                                    if language in result:
+                                        result[language].extend(converted.root[language.value.code])
+                                    else:
+                                        result[language] = converted.root[language.value.code]
 
-                if response.status_code == 200:
-                    data = response.json()
-                    converted = DefinitionResult.model_validate(data)
-
-                    for language in languages:
-                        if language.value.code in converted.root:
-                            if language in result:
-                                result[language].extend(converted.root[language.value.code])
-                            else:
-                                result[language] = converted.root[language.value.code]
-
-            except TimeoutError:
-                logger.error('Timeout error raised when trying to get the definition query result.')
-                failed += 1
-            except Exception as ex:
-                logger.error(f'An exception was raised while getting the definition query result:\n{ex}')
-                failed += 1
+                    except ClientConnectionError:
+                        logger.error('Connection failed when trying to get the definition query result.')
+                        failed += 1
+                    except ServerDisconnectedError:
+                        logger.error('Server disconnected when trying to get the definition query result.')
+                        failed += 1
+                    except ServerTimeoutError:
+                        logger.error('Timeout error raised when trying to get the definition query result.')
+                        failed += 1
+                    except Exception as ex:
+                        logger.error(f'An exception was raised while getting the definition query result:\n{ex}')
+                        failed += 1
 
         if len(variations) == failed:
             # if all failed, there must be an issue, thus we return None here

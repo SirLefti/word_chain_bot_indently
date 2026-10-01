@@ -165,7 +165,7 @@ Therefore, a word that is valid in this server may not be valid in another serve
 
         match status:
             case WordStatus.WORD_EXISTS | WordStatus.WHITELISTED:
-                data = self.common.query_wiktionary_definitions(word, config.languages)
+                data = await self.common.query_wiktionary_definitions(word, config.languages)
 
                 if data is None:
                     emb.description = f'⚠️ There was an issue in processing your request.'
