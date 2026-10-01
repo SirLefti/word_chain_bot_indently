@@ -17,7 +17,7 @@ from consts import COG_NAME_COMMON, COG_NAME_MANAGER_CMDS, LOGGER_NAME_MANAGER_C
     RELIABLE_ROLE_KARMA_THRESHOLD, RELIABLE_ROLE_ACCURACY_THRESHOLD, DISCORD_UNKNOWN_MEMBER, DISCORD_UNKNOWN_ROLE, \
     DISCORD_UNKNOWN_USER
 from language import Language
-from model import BlacklistModel, GameModeState, MemberModel, WhitelistModel, ServerConfig, ServerConfigModel
+from model import BlacklistModel, GameModeState, MemberModel, WhitelistModel
 
 if TYPE_CHECKING:
     from cogs.common import CommonCog

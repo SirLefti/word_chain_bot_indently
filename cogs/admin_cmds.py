@@ -9,7 +9,6 @@ from logging import Logger
 from logging.config import fileConfig
 from typing import TYPE_CHECKING, Optional
 
-import discord
 from discord import Colour, Embed, File, Forbidden, Interaction, Object, Permissions, app_commands
 from discord.ext.commands import Cog
 from sqlalchemy import CursorResult, delete, insert, select
