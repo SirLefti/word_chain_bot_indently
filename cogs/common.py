@@ -432,7 +432,7 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
     # ---------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def start_api_queries(word: str, languages: List[Language]) -> List[Future]:
+    def start_api_queries(word: str, languages: list[Language]) -> dict[Language, Future]:
         """
         Starts Wiktionary API queries in the background to find the given word, in each of the
         given languages.
@@ -446,10 +446,10 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
 
         Returns
         -------
-        list[concurrent.futures.Future]
-              A list of Future objects for the API query, one for each language.
+        dict[Language, concurrent.futures.Future]
+              A dict of Language to Future objects for the API query, one for each language.
         """
-        futures: List[Future] = []
+        futures: dict[Language, Future] = {}
 
         for language in languages:
 
@@ -468,7 +468,7 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
 
             session: FuturesSession = FuturesSession()
             future: Future = session.get(url=url, params=params, headers=headers)
-            futures.append(future)
+            futures[language] = future
 
         return futures
 
@@ -583,20 +583,19 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
     # ---------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    async def add_words_to_cache(futures: List[Future], connection: AsyncConnection) -> None:
+    async def add_words_to_cache(futures: dict[Language, Future], connection: AsyncConnection) -> None:
         """
-        From the given list of Future objects, get the results of the queries and
+        From the given dict of Future objects, get the results of the queries and
         add the words that were found to the cache.
 
         Parameters
         ----------
-        futures : List[Future]
-            A list of Future objects for the API queries.
+        futures : dict[Language, Future]
+            A dict of Language to Future objects for the API queries.
         connection : AsyncConnection
             The AsyncConnection object to access the db.
         """
-        future: Future
-        for future in futures:
+        for (language, future) in futures.items():
             try:
                 response = future.result(timeout=5)
 
@@ -608,9 +607,6 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
                 matches: list[str] = data[1]
                 # causes StopIteration if nothing matches
                 _: str = next((match for match in matches if match.lower() == word.lower()))
-
-                lang_code: str = (data[3][0]).split('//')[1].split('.')[0]
-                language: Language = Language.from_language_code(lang_code)
 
                 await CommonCog.add_word_to_cache(word, language, connection)
 
@@ -811,21 +807,23 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
             if await self.is_word_in_cache(word, connection, languages):
                 return WordStatus.WORD_EXISTS
 
-            futures: list[Future] = self.start_api_queries(word, valid_languages)
+            futures: dict[Language, Future] = self.start_api_queries(word, valid_languages)
 
-            status = WordStatus.ERROR
-            for future in futures:
-                query_response_code = self.get_query_response(future)
+            status = WordStatus.WORD_DOESNT_EXIST
+            for future in futures.values():
+                match self.get_query_response(future):
+                    case self.API_RESPONSE_WORD_EXISTS:
+                        # exists in one language, no need to check the others now, which would override this result
+                        status = WordStatus.WORD_EXISTS
+                        break # python has no fallthrough in match like other language, this breaks the loop instead
+                    case self.API_RESPONSE_ERROR:
+                        # api error, try the next one if available and return the error if that doesn't find it either
+                        status = WordStatus.ERROR
+                    case self.API_RESPONSE_WORD_DOESNT_EXIST:
+                        # keep the current status (either found or error)
+                        pass
 
-                if query_response_code == self.API_RESPONSE_WORD_EXISTS:
-                    status = WordStatus.WORD_EXISTS
-
-                if query_response_code == self.API_RESPONSE_WORD_DOESNT_EXIST:
-                    status = WordStatus.WORD_DOESNT_EXIST
-
-                if query_response_code == self.API_RESPONSE_ERROR:
-                    status = WordStatus.ERROR
-
+            # Still waits for the remaining futures, so their results get cached too
             await self.add_words_to_cache(futures, connection)
             await connection.commit()
 

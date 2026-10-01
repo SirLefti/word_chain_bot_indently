@@ -301,7 +301,7 @@ The chain has **not** been broken. Please enter another word.''')
             # Check if word is valid
             # (if and only if not whitelisted)
             # -----------------------------------------
-            futures: Optional[list[Future]]
+            futures: Optional[dict[Language, Future]]
 
             # First check the whitelist or the word cache
             matched_language = await self.common.is_word_in_cache(word, connection, server_languages)
@@ -347,25 +347,21 @@ current high score of **{config.game_state[game_mode].high_score}**!'''
             # ----------------------------------
             # Check if word is valid (contd.)
             # ----------------------------------
-            query_result_code: int
-
+            query_result_code: int = self.common.API_RESPONSE_WORD_DOESNT_EXIST
             if futures:
-                for future in futures:
-                    query_result_code = self.common.get_query_response(future)
-
-                    if query_result_code == self.common.API_RESPONSE_WORD_EXISTS:
-                        # The word exists in at least one of the languages the server is configured for.
-                        # We don't need to loop over the other Future objects.
-                        response = future.result(timeout=5)
-                        data = response.json()
-                        lang_code: str = (data[3][0]).split('//')[1].split('.')[0]
-                        queried_language: Language = Language.from_language_code(lang_code)
-
-                        # many foreign words can be found in a languages wiktionary, we accept a word only as existing
-                        # if it does match the languages word regex
-                        if self.common.word_matches_pattern(word, queried_language.value):
-                            matched_language: Language = queried_language
-                            break
+                for (queried_language, future) in futures.items():
+                    match self.common.get_query_response(future):
+                        case self.common.API_RESPONSE_WORD_EXISTS:
+                            # exists in one language, no need to check the others now, which would override this result
+                            query_result_code = self.common.API_RESPONSE_WORD_EXISTS
+                            matched_language = queried_language
+                            break # python has no fallthrough in match like other language, this breaks the loop instead
+                        case self.common.API_RESPONSE_ERROR:
+                            # api error, try the next one if available and return the error if that doesn't find it either
+                            query_result_code = self.common.API_RESPONSE_ERROR
+                        case self.common.API_RESPONSE_WORD_DOESNT_EXIST:
+                            # keep the current status (either found or error)
+                            pass
 
                 # Add the words to the cache for all languages
                 await self.common.add_words_to_cache(futures, connection)
