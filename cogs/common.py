@@ -565,14 +565,11 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
                                     else:
                                         result[language] = converted.root[language.value.code]
 
+                except TimeoutError:
+                    logger.error('Timeout error raised when trying to get the definition query result.')
+                    failed += 1
                 except ClientConnectionError:
                     logger.error('Connection failed when trying to get the definition query result.')
-                    failed += 1
-                except ServerDisconnectedError:
-                    logger.error('Server disconnected when trying to get the definition query result.')
-                    failed += 1
-                except ServerTimeoutError:
-                    logger.error('Timeout error raised when trying to get the definition query result.')
                     failed += 1
                 except Exception as ex:
                     logger.error(f'An exception was raised while getting the definition query result:\n{ex}')
