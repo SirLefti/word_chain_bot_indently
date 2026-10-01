@@ -13,9 +13,9 @@ from discord.ext.commands import Cog
 from sqlalchemy import CursorResult, delete, insert, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from consts import COG_NAME_COMMON, COG_NAME_MANAGER_CMDS, LOGGER_NAME_MANAGER_COG, GameMode, \
-    RELIABLE_ROLE_KARMA_THRESHOLD, RELIABLE_ROLE_ACCURACY_THRESHOLD, DISCORD_UNKNOWN_MEMBER, DISCORD_UNKNOWN_ROLE, \
-    DISCORD_UNKNOWN_USER
+from consts import (COG_NAME_COMMON, COG_NAME_MANAGER_CMDS, DISCORD_UNKNOWN_MEMBER, DISCORD_UNKNOWN_ROLE,
+                    DISCORD_UNKNOWN_USER, LOGGER_NAME_MANAGER_COG, RELIABLE_ROLE_ACCURACY_THRESHOLD,
+                    RELIABLE_ROLE_KARMA_THRESHOLD, GameMode)
 from language import Language
 from model import BlacklistModel, GameModeState, MemberModel, WhitelistModel
 

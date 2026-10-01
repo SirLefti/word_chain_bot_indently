@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, List, Optional
 
 import discord
 from bs4 import BeautifulSoup
-from discord import Guild, Permissions, Member
+from discord import Guild, Member, Permissions
 from discord.ext import commands
 from discord.ext.commands import Cog
 from pydantic import BaseModel, ConfigDict, RootModel, field_validator
@@ -26,10 +26,9 @@ from sqlalchemy import CursorResult, and_, exists, insert, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from consts import (COG_NAME_COMMON, GLOBAL_BLACKLIST_2_LETTER_WORDS_EN, GLOBAL_BLACKLIST_N_LETTER_WORDS_EN,
-                    HISTORY_LENGTH, LOGGER_NAME_COMMON_COG, RELIABLE_ROLE_ACCURACY_THRESHOLD,
-                    RELIABLE_ROLE_KARMA_THRESHOLD, GameMode, DISCORD_UNKNOWN_ROLE, DISCORD_UNKNOWN_MEMBER,
-                    DISCORD_UNKNOWN_USER)
+from consts import (COG_NAME_COMMON, DISCORD_UNKNOWN_MEMBER, DISCORD_UNKNOWN_ROLE, DISCORD_UNKNOWN_USER,
+                    GLOBAL_BLACKLIST_2_LETTER_WORDS_EN, GLOBAL_BLACKLIST_N_LETTER_WORDS_EN, HISTORY_LENGTH,
+                    LOGGER_NAME_COMMON_COG, RELIABLE_ROLE_ACCURACY_THRESHOLD, RELIABLE_ROLE_KARMA_THRESHOLD, GameMode)
 from language import Language, LanguageInfo
 from model import BlacklistModel, MemberModel, ServerConfig, ServerConfigModel, WhitelistModel, WordCacheModel
 
