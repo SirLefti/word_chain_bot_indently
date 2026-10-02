@@ -4,10 +4,9 @@ from __future__ import annotations
 import logging
 import re
 import time
-from asyncio import Future
 from collections import deque
 from logging.config import fileConfig
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import discord
 from discord import MessageType
@@ -16,6 +15,7 @@ from discord.ext.commands import Cog
 from sqlalchemy import CursorResult, delete, exists, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from cogs.common import ApiResponse
 from consts import COG_NAME_COMMON, COG_NAME_GAME, LOGGER_NAME_GAME_COG, MISTAKE_PENALTY, SETTINGS, GameMode
 from karma import calculate_total_karma
 from language import Language
@@ -301,18 +301,11 @@ The chain has **not** been broken. Please enter another word.''')
             # Check if word is valid
             # (if and only if not whitelisted)
             # -----------------------------------------
-            futures: Optional[dict[Language, Future]]
-
             # First check the whitelist or the word cache
             matched_language = await self.common.is_word_in_cache(word, connection, server_languages)
-            if word_whitelisted or matched_language:
-                # Word found in cache. No need to query API
-                futures = None
-            else:
-                # Word neither whitelisted, nor found in cache.
-                # Start the API request, but deal with it later.
-                # Query only languages where word would be valid.
-                futures = self.common.start_api_queries(word, valid_languages)
+            # Word neither whitelisted, nor found in cache, so the API has to be queried.
+            # This is done after the cheap checks below, which may already reject the word.
+            query_api: bool = not word_whitelisted and not matched_language
 
             # -------------
             # Wrong member
@@ -347,26 +340,25 @@ current high score of **{config.game_state[game_mode].high_score}**!'''
             # ----------------------------------
             # Check if word is valid (contd.)
             # ----------------------------------
-            query_result_code: int = self.common.API_RESPONSE_WORD_DOESNT_EXIST
-            if futures:
-                for (queried_language, future) in futures.items():
-                    match self.common.get_query_response(future):
-                        case self.common.API_RESPONSE_WORD_EXISTS:
-                            # exists in one language, no need to check the others now, which would override this result
-                            query_result_code = self.common.API_RESPONSE_WORD_EXISTS
-                            matched_language = queried_language
-                            break # python has no fallthrough in match like other language, this breaks the loop instead
-                        case self.common.API_RESPONSE_ERROR:
-                            # api error, try the next one if available and return the error if that doesn't find it either
-                            query_result_code = self.common.API_RESPONSE_ERROR
-                        case self.common.API_RESPONSE_WORD_DOESNT_EXIST:
-                            # keep the current status (either found or error)
-                            pass
+            if query_api:
+                # Query only languages where word would be valid.
+                responses: dict[Language, ApiResponse] = await self.common.query_word_existence(word, valid_languages)
 
-                # Add the words to the cache for all languages
-                await self.common.add_words_to_cache(futures, connection)
+                # Add the word to the cache for all languages it was found in
+                await self.common.add_existing_words_to_cache(word, responses, connection)
 
-                if query_result_code == self.common.API_RESPONSE_WORD_DOESNT_EXIST:
+                # existing in one language wins, otherwise an error in any language makes the result unreliable
+                matched_language = next((language for language, response in responses.items()
+                                         if response == ApiResponse.WORD_EXISTS), None)
+                query_result_code: ApiResponse
+                if matched_language:
+                    query_result_code = ApiResponse.WORD_EXISTS
+                elif ApiResponse.ERROR in responses.values():
+                    query_result_code = ApiResponse.ERROR
+                else:
+                    query_result_code = ApiResponse.WORD_DOESNT_EXIST
+
+                if query_result_code == ApiResponse.WORD_DOESNT_EXIST:
                     if config.game_state[game_mode].current_word:
                         response: str = f'''{message.author.mention} messed up the chain! \
 *The word you entered does not exist.^*
@@ -386,7 +378,7 @@ Restart and try to beat the current high score of **{config.game_state[game_mode
                     await connection.commit()
                     return
 
-                elif query_result_code == self.common.API_RESPONSE_ERROR:
+                elif query_result_code == ApiResponse.ERROR:
                     await self.add_reaction(message, '⚠️')
                     await self.send_message_to_channel(message.channel, ''':octagonal_sign: There was an issue in the backend.
 The above entered word is **NOT** being taken into account.''')
