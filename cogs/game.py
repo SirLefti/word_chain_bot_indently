@@ -342,7 +342,7 @@ current high score of **{config.game_state[game_mode].high_score}**!'''
             # ----------------------------------
             if query_api:
                 # Query only languages where word would be valid.
-                responses: dict[Language, ApiResponse] = await self.common.query_word_existence(word, valid_languages)
+                responses: dict[Language, ApiResponse] = await self.common.query_wiktionary_existence(word, valid_languages)
 
                 # Add the word to the cache for all languages it was found in
                 await self.common.add_existing_words_to_cache(word, responses, connection)

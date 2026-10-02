@@ -419,7 +419,7 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
     # ---------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    async def query_word_existence(word: str, languages: list[Language]) -> dict[Language, ApiResponse]:
+    async def query_wiktionary_existence(word: str, languages: list[Language]) -> dict[Language, ApiResponse]:
         """
         Queries the Wiktionary API of each given language in parallel to find the given word.
 
@@ -764,7 +764,7 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
             if await self.is_word_in_cache(word, connection, languages):
                 return WordStatus.WORD_EXISTS
 
-        responses: dict[Language, ApiResponse] = await self.query_word_existence(word, valid_languages)
+        responses: dict[Language, ApiResponse] = await self.query_wiktionary_existence(word, valid_languages)
 
         # existing in one language wins, otherwise an error in any language makes the result unreliable
         if ApiResponse.WORD_EXISTS in responses.values():
