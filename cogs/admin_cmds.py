@@ -100,7 +100,7 @@ class AdminCommandsCog(Cog, name=COG_NAME_ADMIN_CMDS):
         except KeyError:
             items.append('Server config not present in cache!\n')
 
-        async with self.bot.db_connection() as connection:
+        async with self.bot.db_connection(locked=False) as connection:
             stmt = select(ServerConfigModel).where(
                 ServerConfigModel.server_id == guild_id_as_number
             )
@@ -577,7 +577,7 @@ class AdminCommandsCog(Cog, name=COG_NAME_ADMIN_CMDS):
 
             await interaction.response.defer()
 
-            async with self.cog.bot.db_connection() as connection:
+            async with self.cog.bot.db_connection(locked=False) as connection:
                 stmt = select(ServerConfigModel.server_id).where(ServerConfigModel.is_banned)
                 result = await connection.execute(stmt)
                 server_ids = [row[0] for row in result]
@@ -798,7 +798,7 @@ class AdminCommandsCog(Cog, name=COG_NAME_ADMIN_CMDS):
 
             await interaction.response.defer()
 
-            async with self.cog.bot.db_connection() as connection:
+            async with self.cog.bot.db_connection(locked=False) as connection:
                 stmt = select(BannedMemberModel.member_id)
                 result = await connection.execute(stmt)
                 member_ids = [row[0] for row in result]

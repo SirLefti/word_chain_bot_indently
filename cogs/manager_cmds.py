@@ -410,7 +410,7 @@ to the other game mode!''')
             if guild is None:
                 return []
 
-            async with self.cog.bot.db_connection() as connection:
+            async with self.cog.bot.db_connection(locked=False) as connection:
                 stmt = select(BlacklistModel.word).where(
                     BlacklistModel.server_id == guild.id,
                     BlacklistModel.word.startswith(value.lower())
@@ -530,7 +530,7 @@ to the other game mode!''')
             if guild is None:
                 return []
 
-            async with self.cog.bot.db_connection() as connection:
+            async with self.cog.bot.db_connection(locked=False) as connection:
                 stmt = select(WhitelistModel.word).where(
                     WhitelistModel.server_id == guild.id,
                     WhitelistModel.word.startswith(value.lower())

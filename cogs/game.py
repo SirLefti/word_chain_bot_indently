@@ -219,7 +219,7 @@ class GameCog(Cog, name=COG_NAME_GAME):
         # -------------------------------
         # Check if member is banned
         # -------------------------------
-        async with self.bot.db_connection() as connection:
+        async with self.bot.db_connection(locked=False) as connection:
             stmt = select(exists(BannedMemberModel).where(
                 BannedMemberModel.member_id == message.author.id
             ))
