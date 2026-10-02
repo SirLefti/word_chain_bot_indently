@@ -103,6 +103,8 @@ class WordChainBot(AutoShardedBot):
     # ---------------------------------------------------------------------------------------------------------------
 
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
+        # we only use slash commands, but discord.py requires to set a command prefix - this function suppresses errors
+        # on any message that starts with the configured prefix
         if isinstance(error, commands.CommandNotFound):
             return
 
