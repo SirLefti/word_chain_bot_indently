@@ -254,8 +254,7 @@ The chain has **not** been broken. Please enter another word.''')
         # We need to check whether the current user already
         # has an entry in the database. If not, we have to add an entry.
         # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        async with self.bot.db_connection() as connection:
-
+        async with self.bot.db_connection(locked=False) as connection:
             stmt = select(exists(MemberModel).where(
                 MemberModel.member_id == message.author.id,
                 MemberModel.server_id == message.guild.id
@@ -263,7 +262,8 @@ The chain has **not** been broken. Please enter another word.''')
             result: CursorResult = await connection.execute(stmt)
             member_exists = result.scalar()
 
-            if not member_exists:
+        if not member_exists:
+            async with self.bot.db_connection() as connection:
                 stmt = insert(MemberModel).values(
                     server_id=message.guild.id,
                     member_id=message.author.id,
@@ -271,7 +271,7 @@ The chain has **not** been broken. Please enter another word.''')
                     correct=0,
                     wrong=0,
                     karma=0.0
-                )
+                ).prefix_with('OR IGNORE')
                 await connection.execute(stmt)
                 await connection.commit()
 
@@ -280,7 +280,7 @@ The chain has **not** been broken. Please enter another word.''')
         # +++++++++++++++++++++
         # CHECK THE WORD
         # +++++++++++++++++++++
-        async with self.bot.db_connection() as connection:
+        async with self.bot.db_connection(locked=False) as connection:
 
             # -------------------------------
             # Check if word is whitelisted
@@ -291,11 +291,8 @@ The chain has **not** been broken. Please enter another word.''')
             # Check if word is blacklisted
             # (if and only if not whitelisted)
             # -----------------------------------
-            if not word_whitelisted and await self.common.is_word_blacklisted(word, message.guild.id, connection):
-                await self.add_reaction(message, '⚠️')
-                await self.send_message_to_channel(message.channel, f'''This word has been **blacklisted**. Please do not use it.
-The chain has **not** been broken. Please enter another word.''')
-                return
+            word_blacklisted: bool = (not word_whitelisted
+                                      and await self.common.is_word_blacklisted(word, message.guild.id, connection))
 
             # ----------------------------------------
             # Check if word is valid
@@ -303,9 +300,18 @@ The chain has **not** been broken. Please enter another word.''')
             # -----------------------------------------
             # First check the whitelist or the word cache
             matched_language = await self.common.is_word_in_cache(word, connection, server_languages)
-            # Word neither whitelisted, nor found in cache, so the API has to be queried.
-            # This is done after the cheap checks below, which may already reject the word.
-            query_api: bool = not word_whitelisted and not matched_language
+
+        # Word neither whitelisted, nor found in cache, so the API has to be queried.
+        # This is done after the cheap checks below, which may already reject the word.
+        query_api: bool = not word_whitelisted and not matched_language
+
+        if word_blacklisted:
+            await self.add_reaction(message, '⚠️')
+            await self.send_message_to_channel(message.channel, f'''This word has been **blacklisted**. Please do not use it.
+The chain has **not** been broken. Please enter another word.''')
+            return
+
+        async with self.bot.db_connection() as connection:
 
             # -------------
             # Wrong member
@@ -458,10 +464,12 @@ The chain has **not** been broken. Please enter another word.\n
                     config.correct_inputs_by_failed_member = 0
                     await self.common.add_remove_failed_role(message.guild, connection)
 
-            await self.common.add_remove_reliable_role(message.guild, connection)
             await config.sync_to_db_with_connection(connection)
 
             await connection.commit()
+
+        async with self.bot.db_connection(locked=False) as connection:
+            await self.common.add_remove_reliable_role(message.guild, connection)
 
     # ---------------------------------------------------------------------------------------------------------------
 
