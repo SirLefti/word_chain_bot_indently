@@ -11,6 +11,7 @@ import discord
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from discord import Colour, Embed, Interaction, Object, app_commands
+from discord.ext import commands
 from discord.ext.commands import AutoShardedBot, ExtensionError, ExtensionNotLoaded
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
@@ -98,6 +99,10 @@ class WordChainBot(AutoShardedBot):
 
         guild_id = extract_guild_id(args)
         logger.error(f'Unhandled exception in {event_method} ({guild_id=}):', exc_info=exc)
+
+    async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
+        if isinstance(error, commands.CommandNotFound):
+            return
 
     # ---------------------------------------------------------------------------------------------------------------
 
