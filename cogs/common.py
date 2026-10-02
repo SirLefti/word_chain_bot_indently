@@ -725,8 +725,7 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
 
     # ---------------------------------------------------------------------------------------------------------------
 
-    async def check_word_status(self, word: str, guild: Guild,
-                                languages: list[Language]) -> tuple[WordStatus, Language | None]:
+    async def check_word_status(self, word: str, guild: Guild, languages: list[Language]) -> WordStatus:
         """
         Checks the words status, i.e. if the word is valid, invalid, whitelisted, blacklisted.
 
@@ -749,34 +748,34 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
         word = word.lower()
 
         if len(word) == 1:
-            return WordStatus.TOO_SHORT, None
+            return WordStatus.TOO_SHORT
 
         valid_languages: list[Language] = [language for language in languages if self.word_matches_pattern(word, language.value)]
         if not valid_languages:
-            return WordStatus.NO_LANGUAGE_MATCH, None
+            return WordStatus.NO_LANGUAGE_MATCH
 
         async with self.bot.db_connection(locked=False) as connection:
             if await self.is_word_whitelisted(word, guild.id, connection):
-                return WordStatus.WHITELISTED, None
+                return WordStatus.WHITELISTED
 
             if await self.is_word_blacklisted(word, guild.id, connection):
-                return WordStatus.BLACKLISTED, None
+                return WordStatus.BLACKLISTED
 
-            if matched_language := await self.is_word_in_cache(word, connection, languages):
-                return WordStatus.WORD_EXISTS, matched_language
+            if await self.is_word_in_cache(word, connection, languages):
+                return WordStatus.WORD_EXISTS
 
         responses: dict[Language, ApiResponse] = await self.query_word_existence(word, valid_languages)
 
         # existing in one language wins, otherwise an error in any language makes the result unreliable
-        if matched_language := next((k for k, v in responses.items() if v == ApiResponse.WORD_EXISTS), None):
+        if ApiResponse.WORD_EXISTS in responses.values():
             async with self.bot.db_connection() as connection:
                 await self.add_existing_words_to_cache(word, responses, connection)
                 await connection.commit()
-            return WordStatus.WORD_EXISTS, matched_language
+            return WordStatus.WORD_EXISTS
 
         if ApiResponse.ERROR in responses.values():
-            return WordStatus.ERROR, None
-        return WordStatus.WORD_DOESNT_EXIST, None
+            return WordStatus.ERROR
+        return WordStatus.WORD_DOESNT_EXIST
 
     # ---------------------------------------------------------------------------------------------------------------
 

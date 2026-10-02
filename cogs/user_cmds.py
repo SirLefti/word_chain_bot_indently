@@ -123,7 +123,7 @@ class UserCommandsCog(Cog, name=COG_NAME_USER_CMDS):
 
         emb = Embed(color=Colour.blurple())
 
-        status, _ = await self.common.check_word_status(word, guild, config.languages)
+        status = await self.common.check_word_status(word, guild, config.languages)
         match status:
             case WordStatus.TOO_SHORT:
                 emb.description = f'❌ The word **{word}** is **not** valid.'
@@ -159,7 +159,7 @@ Therefore, a word that is valid in this server may not be valid in another serve
         await self.common.ensure_config(guild)
         config = self.common.server_configs[guild.id]
 
-        status, _ = await self.common.check_word_status(word, guild, config.languages)
+        status = await self.common.check_word_status(word, guild, config.languages)
 
         emb: Embed = Embed(colour=Colour.orange())
 
