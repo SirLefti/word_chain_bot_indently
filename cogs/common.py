@@ -754,7 +754,7 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
         if not valid_languages:
             return WordStatus.NO_LANGUAGE_MATCH
 
-        async with self.bot.db_connection() as connection:
+        async with self.bot.db_connection(locked=False) as connection:
             if await self.is_word_whitelisted(word, guild.id, connection):
                 return WordStatus.WHITELISTED
 
@@ -764,17 +764,18 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
             if await self.is_word_in_cache(word, connection, languages):
                 return WordStatus.WORD_EXISTS
 
-            responses: dict[Language, ApiResponse] = await self.query_word_existence(word, valid_languages)
+        responses: dict[Language, ApiResponse] = await self.query_word_existence(word, valid_languages)
 
-            await self.add_existing_words_to_cache(word, responses, connection)
-            await connection.commit()
+        # existing in one language wins, otherwise an error in any language makes the result unreliable
+        if ApiResponse.WORD_EXISTS in responses.values():
+            async with self.bot.db_connection() as connection:
+                await self.add_existing_words_to_cache(word, responses, connection)
+                await connection.commit()
+            return WordStatus.WORD_EXISTS
 
-            # existing in one language wins, otherwise an error in any language makes the result unreliable
-            if ApiResponse.WORD_EXISTS in responses.values():
-                return WordStatus.WORD_EXISTS
-            if ApiResponse.ERROR in responses.values():
-                return WordStatus.ERROR
-            return WordStatus.WORD_DOESNT_EXIST
+        if ApiResponse.ERROR in responses.values():
+            return WordStatus.ERROR
+        return WordStatus.WORD_DOESNT_EXIST
 
     # ---------------------------------------------------------------------------------------------------------------
 
