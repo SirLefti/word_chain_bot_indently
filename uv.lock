@@ -1576,7 +1576,7 @@ requires-dist = [
     { name = "isort", marker = "extra == 'dev'", specifier = ">=8.0.0,<9.0.0" },
     { name = "matplotlib", marker = "extra == 'viz'", specifier = ">=3.10.0,<4.0.0" },
     { name = "pydantic", specifier = ">=2.11.7,<3.0.0" },
-    { name = "pydantic-settings", specifier = ">=2.11.0,<3.0.0" },
+    { name = "pydantic-settings", specifier = ">=2.14.2,<3.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.0,<10.0.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.49,<3.0.0" },
     { name = "uuid6", specifier = ">=2025.0.1" },
