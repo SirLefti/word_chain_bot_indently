@@ -1,10 +1,11 @@
 """Cog that contains the actual game logic."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
-from collections import deque
+from collections import defaultdict, deque
 from logging.config import fileConfig
 from typing import TYPE_CHECKING
 
@@ -13,7 +14,6 @@ from discord import MessageType
 from discord.ext import commands
 from discord.ext.commands import Cog
 from sqlalchemy import CursorResult, delete, exists, func, insert, select, update
-from sqlalchemy.ext.asyncio import AsyncConnection
 
 from cogs.common import ApiResponse
 from consts import COG_NAME_COMMON, COG_NAME_GAME, LOGGER_NAME_GAME_COG, MISTAKE_PENALTY, SETTINGS, GameMode
@@ -33,6 +33,7 @@ class GameCog(Cog, name=COG_NAME_GAME):
 
     def __init__(self, bot: WordChainBot):
         self.bot: WordChainBot = bot
+        self.server_locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
         super().__init__()
 
     @property
@@ -311,8 +312,9 @@ The chain has **not** been broken. Please enter another word.''')
 The chain has **not** been broken. Please enter another word.''')
             return
 
-        async with self.bot.db_connection() as connection:
-
+        # everything here is locked behind a lock per server, that ensures that only one message is processed per server
+        # at once, to ensure consistency
+        async with self.server_locks[server_id]:
             # -------------
             # Wrong member
             # -------------
@@ -323,8 +325,7 @@ The chain has **not** been broken. Please enter another word.''')
 Restart with a word starting with **{config.game_state[game_mode].current_word[-game_mode.value:]}** and \
 try to beat the current high score of **{config.game_state[game_mode].high_score}**!'''
 
-                await self.handle_mistake(message, response, connection, game_mode)
-                await connection.commit()
+                await self.handle_mistake(message, response, game_mode)
                 return
 
             # -------------------------
@@ -339,8 +340,7 @@ try to beat the current high score of **{config.game_state[game_mode].high_score
 Restart with a word starting with **{config.game_state[game_mode].current_word[-game_mode.value:]}** and try to beat the \
 current high score of **{config.game_state[game_mode].high_score}**!'''
 
-                await self.handle_mistake(message, response, connection, game_mode)
-                await connection.commit()
+                await self.handle_mistake(message, response, game_mode)
                 return
 
             # ----------------------------------
@@ -349,9 +349,6 @@ current high score of **{config.game_state[game_mode].high_score}**!'''
             if query_api:
                 # Query only languages where word would be valid.
                 responses: dict[Language, ApiResponse] = await self.common.query_wiktionary_existence(word, valid_languages)
-
-                # Add the word to the cache for all languages it was found in
-                await self.common.add_existing_words_to_cache(word, responses, connection)
 
                 # existing in one language wins, otherwise an error in any language makes the result unreliable
                 matched_language = next((language for language, response in responses.items()
@@ -364,7 +361,12 @@ current high score of **{config.game_state[game_mode].high_score}**!'''
                 else:
                     query_result_code = ApiResponse.WORD_DOESNT_EXIST
 
-                if query_result_code == ApiResponse.WORD_DOESNT_EXIST:
+                if query_result_code == ApiResponse.WORD_EXISTS:
+                    async with self.bot.db_connection() as connection:
+                        await self.common.add_existing_words_to_cache(word, responses, connection)
+                        await connection.commit()
+
+                elif query_result_code == ApiResponse.WORD_DOESNT_EXIST:
                     if config.game_state[game_mode].current_word:
                         response: str = f'''{message.author.mention} messed up the chain! \
 *The word you entered does not exist.^*
@@ -380,8 +382,7 @@ enabled in this server.\n-# To check enabled languages, use `/show_languages`.''
 *The word you entered does not exist.*
 Restart and try to beat the current high score of **{config.game_state[game_mode].high_score}**!'''
 
-                    await self.handle_mistake(message, response, connection, game_mode)
-                    await connection.commit()
+                    await self.handle_mistake(message, response, game_mode)
                     return
 
                 elif query_result_code == ApiResponse.ERROR:
@@ -394,13 +395,15 @@ The above entered word is **NOT** being taken into account.''')
             # Check repetitions
             # (Repetitions are not mistakes)
             # -----------------------------------
-            stmt = select(exists(UsedWordsModel).where(
-                UsedWordsModel.server_id == message.guild.id,
-                UsedWordsModel.game_mode == game_mode.value,
-                UsedWordsModel.word == word
-            ))
-            result: CursorResult = await connection.execute(stmt)
-            word_already_used = result.scalar()
+            async with self.bot.db_connection(locked=False) as connection:
+                stmt = select(exists(UsedWordsModel).where(
+                    UsedWordsModel.server_id == message.guild.id,
+                    UsedWordsModel.game_mode == game_mode.value,
+                    UsedWordsModel.word == word
+                ))
+                result: CursorResult = await connection.execute(stmt)
+                word_already_used = result.scalar()
+
             if word_already_used:
                 await self.add_reaction(message, '⚠️')
                 await self.send_message_to_channel(message.channel, f'''The word *{word}* has already been used before. \
@@ -434,47 +437,45 @@ The chain has **not** been broken. Please enter another word.\n
             logger.debug(f'member {message.author.id} got {karma} karma for "{word}"')
             self.common.server_histories[server_id][message.author.id][game_mode].append(word)
 
-            stmt = update(MemberModel).where(
-                MemberModel.server_id == message.guild.id,
-                MemberModel.member_id == message.author.id
-            ).values(
-                score=MemberModel.score + 1,
-                correct=MemberModel.correct + 1,
-                karma=func.max(0, MemberModel.karma + karma)
-            )
-            await connection.execute(stmt)
+            async with self.bot.db_connection() as connection:
+                stmt = update(MemberModel).where(
+                    MemberModel.server_id == message.guild.id,
+                    MemberModel.member_id == message.author.id
+                ).values(
+                    score=MemberModel.score + 1,
+                    correct=MemberModel.correct + 1,
+                    karma=func.max(0, MemberModel.karma + karma)
+                )
+                await connection.execute(stmt)
 
-            stmt = insert(UsedWordsModel).values(
-                server_id=message.guild.id,
-                game_mode=game_mode.value,
-                word=word
-            )
-            await connection.execute(stmt)
+                stmt = insert(UsedWordsModel).values(
+                    server_id=message.guild.id,
+                    game_mode=game_mode.value,
+                    word=word
+                )
+                await connection.execute(stmt)
+
+                if self.common.server_failed_roles[server_id] and config.failed_member_id == message.author.id:
+                    config.correct_inputs_by_failed_member += 1
+                    if config.correct_inputs_by_failed_member >= 30:
+                        config.failed_member_id = None
+                        config.correct_inputs_by_failed_member = 0
+                        await self.common.add_remove_failed_role(message.guild, connection)
+
+                await config.sync_to_db_with_connection(connection)
+                await connection.commit()
 
             current_count = config.game_state[game_mode].current_count
 
             if current_count > 0 and current_count % 100 == 0:
                 await self.send_message_to_channel(message.channel, f'{current_count} words! Nice work, keep it up!')
 
-            # Check and reset the server config.failed_member_id to None.
-            if self.common.server_failed_roles[server_id] and config.failed_member_id == message.author.id:
-                config.correct_inputs_by_failed_member += 1
-                if config.correct_inputs_by_failed_member >= 30:
-                    config.failed_member_id = None
-                    config.correct_inputs_by_failed_member = 0
-                    await self.common.add_remove_failed_role(message.guild, connection)
-
-            await config.sync_to_db_with_connection(connection)
-
-            await connection.commit()
-
-        async with self.bot.db_connection(locked=False) as connection:
-            await self.common.add_remove_reliable_role(message.guild, connection)
+            async with self.bot.db_connection(locked=False) as connection:
+                await self.common.add_remove_reliable_role(message.guild, connection)
 
     # ---------------------------------------------------------------------------------------------------------------
 
-    async def handle_mistake(self, message: discord.Message, response: str, connection: AsyncConnection,
-                             game_mode: GameMode) -> None:
+    async def handle_mistake(self, message: discord.Message, response: str, game_mode: GameMode) -> None:
         """Handles when someone messes up the count with a wrong number"""
         if not message.guild:
             return
@@ -483,32 +484,36 @@ The chain has **not** been broken. Please enter another word.\n
         member_id = message.author.id
         # no ensure_config needed here, this is already done in the upper call frame
         config = self.common.server_configs[server_id]
-        if self.common.server_failed_roles[server_id]:
-            config.failed_member_id = member_id  # Designate current user as failed member
-            await self.common.add_remove_failed_role(message.guild, connection)
-
-        config.fail_chain(game_mode, member_id)
 
         await self.send_message_to_channel(message.channel, response)
         await self.add_reaction(message, '❌')
 
-        stmt = update(MemberModel).where(
-            MemberModel.server_id == server_id,
-            MemberModel.member_id == member_id
-        ).values(
-            score=MemberModel.score - 1,
-            wrong=MemberModel.wrong + 1,
-            karma=func.max(0, MemberModel.karma - MISTAKE_PENALTY)
-        )
-        await connection.execute(stmt)
+        async with self.bot.db_connection() as connection:
+            if self.common.server_failed_roles[server_id]:
+                config.failed_member_id = member_id  # Designate current user as failed member
+                await self.common.add_remove_failed_role(message.guild, connection)
 
-        stmt = delete(UsedWordsModel).where(
-            UsedWordsModel.server_id == server_id,
-            UsedWordsModel.game_mode == game_mode.value
-        )
-        await connection.execute(stmt)
+            config.fail_chain(game_mode, member_id)
 
-        await config.sync_to_db_with_connection(connection)
+            stmt = update(MemberModel).where(
+                MemberModel.server_id == server_id,
+                MemberModel.member_id == member_id
+            ).values(
+                score=MemberModel.score - 1,
+                wrong=MemberModel.wrong + 1,
+                karma=func.max(0, MemberModel.karma - MISTAKE_PENALTY)
+            )
+            await connection.execute(stmt)
+
+            stmt = delete(UsedWordsModel).where(
+                UsedWordsModel.server_id == server_id,
+                UsedWordsModel.game_mode == game_mode.value
+            )
+            await connection.execute(stmt)
+
+            await config.sync_to_db_with_connection(connection)
+
+            await connection.commit()
 
     # ---------------------------------------------------------------------------------------------------------------
 
