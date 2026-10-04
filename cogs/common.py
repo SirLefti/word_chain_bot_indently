@@ -443,15 +443,20 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
             "User-Agent": "word-chain-bot"
         }
 
+        variants: list[str] = list(dict.fromkeys([word.lower(), word.capitalize(), word.upper()]))
+
         async def fetch(s: ClientSession, language: Language) -> ApiResponse:
             url: str = f"https://{language.value.code}.wiktionary.org/w/api.php"
             params: dict = {
-                "action": "opensearch",
-                "namespace": "0",
-                "search": word,
-                "limit": "7",
+                "action": "query",
                 "format": "json",
-                "profile": "strict"
+                "formatversion": "2",
+                "titles": '|'.join(variants),
+                "list": "prefixsearch",
+                "pssearch": word,
+                "psnamespace": "0",
+                "pslimit": "7",
+                "psprofile": "strict"
             }
 
             try:
@@ -462,8 +467,17 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
                         return ApiResponse.ERROR
 
                     data = await response.json()
-                    matches: list[str] = data[1]
-                    if any(match.lower() == word.lower() for match in matches):
+                    if 'error' in data:
+                        logger.error(f'Received error from {language.value.code} Wiktionary API query: '
+                                     f'{data["error"]}')
+                        return ApiResponse.ERROR
+
+                    pages: list[dict] = data['query']['pages']
+                    if any(not page.get('missing', False) for page in pages):
+                        return ApiResponse.WORD_EXISTS
+
+                    matches: list[dict] = data['query']['prefixsearch']
+                    if any(match['title'].lower() == word.lower() for match in matches):
                         return ApiResponse.WORD_EXISTS
                     return ApiResponse.WORD_DOESNT_EXIST
 
