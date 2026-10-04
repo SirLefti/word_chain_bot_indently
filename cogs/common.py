@@ -117,11 +117,15 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
 
             if config.game_state[game_mode].current_word:
                 emb.add_field(name='Last valid word', value=f'{config.game_state[game_mode].current_word}', inline=True)
+                token = config.game_state[game_mode].current_word[-game_mode.value:]
+                emb.description += f'Continue with a word starting with `{token}`\n'
 
                 if config.game_state[game_mode].last_member_id:
                     member: Optional[discord.Member] = channel.guild.get_member(config.game_state[game_mode].last_member_id)
                     if member:
                         emb.add_field(name='Last input by', value=f'{member.mention}', inline=True)
+
+            emb.add_field(name='Game mode', value=f'{game_mode.display_name} Mode', inline=True)
 
             try:
                 await channel.send(embed=emb)
