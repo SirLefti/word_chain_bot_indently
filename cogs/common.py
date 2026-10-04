@@ -423,6 +423,71 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
     # ---------------------------------------------------------------------------------------------------------------
 
     @staticmethod
+    async def query_wiktionary_titles(session: ClientSession, word: str, language_code: str) -> list[str] | None:
+        """
+        Queries the Wiktionary API of the given language for the titles of all pages matching the given word,
+        regardless of capitalization.
+
+        Wiktionary page titles are case-sensitive, so the common capitalizations are looked up as exact titles.
+        Other capitalizations (e.g. with capitals inside the word) are covered by the prefix search, which is
+        case-insensitive, but only returns a limited number of results in an order we cannot influence.
+
+        Parameters
+        ----------
+        session : ClientSession
+            The session to send the request with.
+        word : str
+            The word to be searched for.
+        language_code : str
+            The code of the Wiktionary to search in.
+
+        Returns
+        -------
+        list[str] | None
+            The titles of the existing pages matching the word, or None if the query failed.
+        """
+        variants: list[str] = list(dict.fromkeys([word, word.lower(), word.capitalize(), word.upper()]))
+
+        url: str = f"https://{language_code}.wiktionary.org/w/api.php"
+        params: dict = {
+            "action": "query",
+            "format": "json",
+            "formatversion": "2",
+            "titles": '|'.join(variants),
+            "list": "prefixsearch",
+            "pssearch": word,
+            "psnamespace": "0",
+            "pslimit": "7",
+            "psprofile": "strict"
+        }
+
+        try:
+            async with session.get(url=url, params=params) as response:
+                if response.status >= 400:
+                    logger.error(f'Received status code {response.status} from {language_code} Wiktionary API query.')
+                    return None
+
+                data = await response.json()
+                if 'error' in data:
+                    logger.error(f'Received error from {language_code} Wiktionary API query: {data["error"]}')
+                    return None
+
+                titles: list[str] = [page['title'] for page in data['query']['pages'] if not page.get('missing', False)]
+                titles += [match['title'] for match in data['query']['prefixsearch']
+                           if match['title'].lower() == word.lower()]
+                return list(dict.fromkeys(titles))
+
+        except TimeoutError:
+            logger.error(f'Timeout error raised when trying to get the {language_code} query result.')
+        except ClientConnectionError:
+            logger.error(f'Connection failed when trying to get the {language_code} query result.')
+        except Exception as ex:
+            logger.error(f'An exception was raised while getting the {language_code} query result:\n{ex}')
+        return None
+
+    # ---------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
     async def query_wiktionary_existence(word: str, languages: list[Language]) -> dict[Language, ApiResponse]:
         """
         Queries the Wiktionary API of each given language in parallel to find the given word.
@@ -443,51 +508,11 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
             "User-Agent": "word-chain-bot"
         }
 
-        variants: list[str] = list(dict.fromkeys([word.lower(), word.capitalize(), word.upper()]))
-
         async def fetch(s: ClientSession, language: Language) -> ApiResponse:
-            url: str = f"https://{language.value.code}.wiktionary.org/w/api.php"
-            params: dict = {
-                "action": "query",
-                "format": "json",
-                "formatversion": "2",
-                "titles": '|'.join(variants),
-                "list": "prefixsearch",
-                "pssearch": word,
-                "psnamespace": "0",
-                "pslimit": "7",
-                "psprofile": "strict"
-            }
-
-            try:
-                async with s.get(url=url, params=params) as response:
-                    if response.status >= 400:
-                        logger.error(f'Received status code {response.status} from {language.value.code} '
-                                     f'Wiktionary API query.')
-                        return ApiResponse.ERROR
-
-                    data = await response.json()
-                    if 'error' in data:
-                        logger.error(f'Received error from {language.value.code} Wiktionary API query: '
-                                     f'{data["error"]}')
-                        return ApiResponse.ERROR
-
-                    pages: list[dict] = data['query']['pages']
-                    if any(not page.get('missing', False) for page in pages):
-                        return ApiResponse.WORD_EXISTS
-
-                    matches: list[dict] = data['query']['prefixsearch']
-                    if any(match['title'].lower() == word.lower() for match in matches):
-                        return ApiResponse.WORD_EXISTS
-                    return ApiResponse.WORD_DOESNT_EXIST
-
-            except TimeoutError:
-                logger.error(f'Timeout error raised when trying to get the {language.value.code} query result.')
-            except ClientConnectionError:
-                logger.error(f'Connection failed when trying to get the {language.value.code} query result.')
-            except Exception as ex:
-                logger.error(f'An exception was raised while getting the {language.value.code} query result:\n{ex}')
-            return ApiResponse.ERROR
+            titles: list[str] | None = await CommonCog.query_wiktionary_titles(s, word, language.value.code)
+            if titles is None:
+                return ApiResponse.ERROR
+            return ApiResponse.WORD_EXISTS if titles else ApiResponse.WORD_DOESNT_EXIST
 
         async with aiohttp.ClientSession(headers=headers, timeout=ClientTimeout(total=5)) as session:
             responses = await asyncio.gather(*(fetch(session, language) for language in languages))
@@ -501,6 +526,9 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
         """
         Queries the Wiktionary API to find the definition of a given word for given languages.
 
+        First, the titles of all pages matching the word are looked up, then the definitions are fetched for those
+        pages only.
+
         Parameters
         ----------
         word : str
@@ -511,31 +539,27 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
         Returns
         -------
         dict[Language, list[Definition]] | None
-              The definitions found per language, or None if every query failed.
+              The definitions found per language, or None if the queries failed.
         """
-        # Create common variations because wiktionary is case-sensitive
-        variations = set()
-        variations.add(word)
-        variations.add(word.lower())
-        variations.add(word.upper())
-        variations.add(word.capitalize())
-
         result: dict[Language, list[Definition]] = {}
-        failed = 0
 
         headers: dict = {
             "User-Agent": "word-chain-bot"
         }
 
-        async def fetch(s: ClientSession, v: str) -> DefinitionResult | None:
-            url: str = f"https://en.wiktionary.org/api/rest_v1/page/definition/{v}?redirect=true"
+        async def fetch(s: ClientSession, title: str) -> DefinitionResult | None:
+            url: str = f"https://en.wiktionary.org/api/rest_v1/page/definition/{title}?redirect=true"
 
             try:
                 async with s.get(url=url) as response:
                     if response.status == 200:
                         data = await response.json()
                         return DefinitionResult.model_validate(data)
-                    return DefinitionResult.model_validate({})
+                    if response.status == 404:
+                        # page exists, but no definitions could be extracted from it
+                        return DefinitionResult.model_validate({})
+                    logger.error(f'Received status code {response.status} from definition query for "{title}".')
+                    return None
 
             except TimeoutError:
                 logger.error('Timeout error raised when trying to get the definition query result.')
@@ -546,26 +570,29 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
             return None
 
         async with aiohttp.ClientSession(headers=headers, timeout=ClientTimeout(total=5)) as session:
-            responses = await asyncio.gather(*(fetch(session, variation) for variation in sorted(variations, reverse=True)))
+            # the definitions endpoint is only available in the English Wiktionary, which covers all languages
+            titles: list[str] | None = await CommonCog.query_wiktionary_titles(session, word, 'en')
+            if titles is None:
+                return None
 
-            for converted in responses:
-                converted: DefinitionResult | None
-                if converted is None:
-                    failed += 1
-                    continue
-                for language in languages:
-                    if language.value.code in converted.root:
-                        if language in result:
-                            result[language].extend(converted.root[language.value.code])
-                        else:
-                            result[language] = converted.root[language.value.code]
+            responses = await asyncio.gather(*(fetch(session, title) for title in titles))
 
-
-        if len(variations) == failed:
+        if titles and all(converted is None for converted in responses):
             # if all failed, there must be an issue, thus we return None here
             return None
-        else:
-            return result
+
+        for converted in responses:
+            converted: DefinitionResult | None
+            if converted is None:
+                continue
+            for language in languages:
+                if language.value.code in converted.root:
+                    if language in result:
+                        result[language].extend(converted.root[language.value.code])
+                    else:
+                        result[language] = converted.root[language.value.code]
+
+        return result
 
     # ---------------------------------------------------------------------------------------------------------------
 
