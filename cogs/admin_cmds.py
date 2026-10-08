@@ -124,7 +124,7 @@ class AdminCommandsCog(Cog, name=COG_NAME_ADMIN_CMDS):
         bot_member = guild.get_member(self.bot.user.id)
         config = self.common.server_configs[guild.id]
 
-        items.extend(self.common.permission_checks_for_config(config, bot_member))
+        items.extend(self.common.health_checks_for_config(config, bot_member))
 
         await interaction.followup.send('\n'.join(items))
 

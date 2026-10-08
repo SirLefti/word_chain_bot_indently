@@ -849,10 +849,12 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
 
     # ---------------------------------------------------------------------------------------------------------------
 
-    @staticmethod
-    def permission_checks_for_config(config: ServerConfig | None, bot_member: Member) -> list[str]:
+    def health_checks_for_config(self, config: ServerConfig | None, bot_member: Member) -> list[str]:
         items = []
         guild = bot_member.guild
+
+        items.append(f'Guild status ready: {'✅' if guild.id in self.servers_ready else 
+            '❌ (if this flag is stuck for more than an hour, please report it on our support server)'}\n')
 
         def permission_check_strings(permissions: Permissions) -> list[str]:
             return [f'Can view channels: {'✅' if permissions.view_channel else '❌'}',

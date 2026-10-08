@@ -129,7 +129,7 @@ class ManagerCommandsCog(Cog, name=COG_NAME_MANAGER_CMDS):
 
         try:
             config = self.common.server_configs[guild.id]
-            items.extend(self.common.permission_checks_for_config(config, bot_member))
+            items.extend(self.common.health_checks_for_config(config, bot_member))
         except KeyError:
             items.append('Server config not present!')
 
