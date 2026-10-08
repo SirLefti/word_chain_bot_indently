@@ -158,6 +158,7 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
                 stmt = insert(ServerConfigModel).values(**new_config.to_sqlalchemy_dict())
                 await _connection.execute(stmt)
                 self.server_configs[new_config.server_id] = new_config
+                self.servers_ready.add(new_config.server_id)
                 logger.warning(f'ensure_config for guild {_guild_id}: new config created')
                 logger.warning(f'trace: {caller_function_name} at {caller_filename}:{caller_lineno} for {guild.id} (shard {guild.shard_id})')
             except SQLAlchemyError as e:
