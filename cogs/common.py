@@ -214,7 +214,10 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
         if perform_rejoin:
             for (index, guild) in enumerate(self.bot.guilds, start=1):
                 config = self.server_configs[guild.id]
-                await self._rejoin(config, guild, '**I\'m now online!**')
+                try:
+                    await self._rejoin(config, guild, '**I\'m now online!**')
+                except Exception:  # noqa: catch all exceptions here to allow to continue with other guilds
+                    logger.exception(f'Rejoin failed for {guild.name} ({guild.id})')
                 if index % 100 == 0 or index == len(self.bot.guilds):
                     logger.info(f'{index}/{len(self.bot.guilds)} guilds ready')
         else:
