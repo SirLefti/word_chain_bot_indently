@@ -52,7 +52,12 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
         self.server_histories: dict[int, dict[int, dict[GameMode, deque[str]]]] = defaultdict(
             lambda: defaultdict(lambda: defaultdict(lambda: deque(maxlen=HISTORY_LENGTH))))
 
+        # servers with completed rejoin: no messages were missed, or the online message was sent, plus new servers
         self.servers_ready: set[int] = set()
+        # ensures that only one rejoin per guild runs at once (restart rejoin, on-demand rejoin, guild join)
+        self.rejoin_locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
+        # maps from channel_id -> id of the online message sent on rejoin, older messages must not be processed
+        self.rejoin_cutoffs: dict[int, int] = dict()
 
         super().__init__()
 
@@ -79,7 +84,38 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
 
     # ---------------------------------------------------------------------------------------------------------------
 
-    async def _rejoin(self, config: ServerConfig, guild: discord.Guild, main_description: str) -> None:
+    async def ensure_ready(self, guild: discord.Guild, trigger_message: discord.Message | None = None) -> None:
+        """
+        Ensures that given guild is ready, performs the rejoin if it is not.
+
+        If `trigger_message` is given, it is the message that caused this call. It is not considered as a missed
+        message, so it does not cause an online message on its own.
+        Callers must not hold a DB connection, because the rejoin may take a while due to API calls.
+        """
+        if guild.id in self.servers_ready:
+            return
+
+        async with self.rejoin_locks[guild.id]:
+            # another message or the restart rejoin may have completed the rejoin while waiting for the lock
+            if guild.id in self.servers_ready:
+                return
+
+            await self.ensure_config(guild)
+            await self._rejoin(self.server_configs[guild.id], guild, '**I\'m now online!**', trigger_message)
+
+    # ---------------------------------------------------------------------------------------------------------------
+
+    def is_before_rejoin_cutoff(self, message: discord.Message) -> bool:
+        """
+        Checks if the message was sent before the online message of a rejoin in its channel. Those messages are based on
+        an outdated chain and must not be processed.
+        """
+        return message.id < self.rejoin_cutoffs.get(message.channel.id, 0)
+
+    # ---------------------------------------------------------------------------------------------------------------
+
+    async def _rejoin(self, config: ServerConfig, guild: discord.Guild, main_description: str,
+                      trigger_message: discord.Message | None = None) -> None:
         """
         Handles the complete workflow of making a guild ready.
         This includes:
@@ -87,7 +123,10 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
         - sending a message with the last word
           - if there were messages sent after the last word that were potentially not registered
           - or if the last message is unavailable
+        - setting the rejoin cutoff to the sent message, so older messages are not processed anymore
         - marking server as ready which is a precondition for further messages being processed
+
+        Must be called with the rejoin lock of the guild being held.
         """
         self.load_discord_roles(guild)
 
@@ -101,10 +140,15 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
                 continue
 
             try:
-                last_message = await channel.fetch_message(channel.last_message_id)
-                if (last_message and
-                        last_message.author.id == config.game_state[game_mode].last_member_id and
-                        last_message.content.lower() == config.game_state[game_mode].current_word):
+                if trigger_message is not None and trigger_message.channel.id == channel.id:
+                    # the trigger message is the latest message itself, so the one before it has to match the state
+                    previous_messages = [m async for m in channel.history(limit=1, before=trigger_message)]
+                    reference_message = previous_messages[0] if previous_messages else None
+                else:
+                    reference_message = await channel.fetch_message(channel.last_message_id)
+                if (reference_message and
+                        reference_message.author.id == config.game_state[game_mode].last_member_id and
+                        reference_message.content.lower() == config.game_state[game_mode].current_word):
                     logger.debug(f'Skipped rejoin message for {guild.name} ({guild.id}) in game mode {game_mode}')
                     continue
             except discord.errors.HTTPException:
@@ -129,7 +173,8 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
             emb.add_field(name='Game mode', value=f'{game_mode.display_name} Mode', inline=True)
 
             try:
-                await channel.send(embed=emb)
+                online_message = await channel.send(embed=emb)
+                self.rejoin_cutoffs[channel.id] = online_message.id
             except discord.errors.HTTPException:
                 logger.info(f'Could not send ready message to {guild.name} ({guild.id}) due to missing permissions.')
 
@@ -213,9 +258,8 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
 
         if perform_rejoin:
             for (index, guild) in enumerate(self.bot.guilds, start=1):
-                config = self.server_configs[guild.id]
                 try:
-                    await self._rejoin(config, guild, '**I\'m now online!**')
+                    await self.ensure_ready(guild)
                 except Exception:  # noqa: catch all exceptions here to allow to continue with other guilds
                     logger.exception(f'Rejoin failed for {guild.name} ({guild.id})')
                 if index % 100 == 0 or index == len(self.bot.guilds):
@@ -240,10 +284,13 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
         logger.info(f'Joined guild {guild.name} ({guild.id})')
 
         if guild.id in self.server_configs:
-            await self._rejoin(self.server_configs[guild.id], guild, '**Welcome back!**')
+            async with self.rejoin_locks[guild.id]:
+                await self._rejoin(self.server_configs[guild.id], guild, '**Welcome back!**')
             logger.info(f'Config already present for {guild.name} ({guild.id})')
             return
 
+        # rejoin happens outside the database connection lock, because the rejoin can take some time
+        rejoin_config: ServerConfig | None = None
         async with self.bot.db_connection() as connection:
             try:
                 new_config = ServerConfig(server_id=guild.id)
@@ -261,13 +308,17 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
                     if len(configs) == 1:
                         config = configs[0]
                         self.server_configs[config.server_id] = config
-                        await self._rejoin(config, guild, '**Welcome back!**')
+                        rejoin_config = config
                         logger.info(f'Config loaded from DB for guild {guild.name} ({guild.id})')
                     else:
                         # this should actually never happen
                         logger.critical(f'unable to insert new config, but DB returned {len(configs)} configs, expected exactly 1 config')
                 else:
                     logger.exception('unexpected DB error')
+
+        if rejoin_config is not None:
+            async with self.rejoin_locks[guild.id]:
+                await self._rejoin(rejoin_config, guild, '**Welcome back!**')
 
     # ---------------------------------------------------------------------------------------------------------------
 
@@ -858,7 +909,7 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
         guild = bot_member.guild
 
         items.append(f'Guild status ready: {'✅' if guild.id in self.servers_ready else 
-            '❌ (if this flag is stuck for more than an hour, please report it on our support server)'}\n')
+            '❌ (the bot gets ready on the next word in a game channel, or when the startup rejoin reaches this server)'}\n')
 
         def permission_check_strings(permissions: Permissions) -> list[str]:
             return [f'Can view channels: {'✅' if permissions.view_channel else '❌'}',

@@ -79,10 +79,6 @@ class GameCog(Cog, name=COG_NAME_GAME):
 
         server_id = message.guild.id
 
-        # Do not respond until the bot has been marked as ready
-        if server_id not in self.common.servers_ready:
-            return
-
         await self.common.ensure_config(message.guild)
         config = self.common.server_configs[server_id]
         if message.channel.id == config.game_state[GameMode.NORMAL].channel_id:
@@ -106,6 +102,10 @@ class GameCog(Cog, name=COG_NAME_GAME):
             return
 
         if not message.guild:
+            return
+
+        # the rejoin is only triggered by new words, events for guilds that are not ready yet are skipped
+        if message.guild.id not in self.common.servers_ready:
             return
 
         await self.common.ensure_config(message.guild)
@@ -149,6 +149,10 @@ class GameCog(Cog, name=COG_NAME_GAME):
             return
 
         if not before.guild:
+            return
+
+        # the rejoin is only triggered by new words, events for guilds that are not ready yet are skipped
+        if before.guild.id not in self.common.servers_ready:
             return
 
         await self.common.ensure_config(before.guild)
@@ -201,6 +205,13 @@ class GameCog(Cog, name=COG_NAME_GAME):
         if not message.guild:
             return
         server_id = message.guild.id
+
+        # performs the rejoin if this is the first message since the restart, must happen before any lock is acquired
+        await self.common.ensure_ready(message.guild, message)
+        # return early if the message was sent before the last rejoin message (potentially sent in ensure_ready)
+        if self.common.is_before_rejoin_cutoff(message):
+            return
+
         # no ensure_config needed here, this is already done in the upper call frame
         config: ServerConfig = self.common.server_configs[server_id]
         word: str = message.content.lower()
