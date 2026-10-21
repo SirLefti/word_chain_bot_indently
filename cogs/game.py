@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-import time
 from collections import defaultdict, deque
 from logging.config import fileConfig
 from typing import TYPE_CHECKING
@@ -17,6 +16,7 @@ from sqlalchemy import CursorResult, delete, exists, func, insert, select, updat
 
 from cogs.common import ApiResponse
 from consts import COG_NAME_COMMON, COG_NAME_GAME, LOGGER_NAME_GAME_COG, MISTAKE_PENALTY, SETTINGS, GameMode
+from errors import CogUnavailableError
 from karma import calculate_total_karma
 from language import Language
 from model import BannedMemberModel, MemberModel, ServerConfig, UsedWordsModel
@@ -38,11 +38,9 @@ class GameCog(Cog, name=COG_NAME_GAME):
 
     @property
     def common(self) -> CommonCog:
-        for _ in range(5):
-            if (cog := self.bot.get_cog(COG_NAME_COMMON)) is not None:
-                return cog # noqa
-            time.sleep(.2)
-        raise ValueError(f'Cog {COG_NAME_COMMON} not found')
+        if (cog := self.bot.get_cog(COG_NAME_COMMON)) is None:
+            raise CogUnavailableError(COG_NAME_COMMON)
+        return cog # noqa
 
     # ----------------------------------------------------------------------------------------------------------------
 
@@ -80,11 +78,6 @@ class GameCog(Cog, name=COG_NAME_GAME):
             return
 
         server_id = message.guild.id
-
-        # The common cog may be None if it is reloading, which should take only a short time, but we cannot send a
-        #  warning here either, because we don't know if it is in one of our game channels or not
-        if not self.common:
-            return
 
         # Do not respond until the bot has been marked as ready
         if server_id not in self.common.servers_ready:
