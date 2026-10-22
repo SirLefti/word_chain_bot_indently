@@ -26,8 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from consts import (COG_NAME_COMMON, DISCORD_UNKNOWN_MEMBER, DISCORD_UNKNOWN_ROLE, DISCORD_UNKNOWN_USER,
                     GLOBAL_BLACKLIST_2_LETTER_WORDS_EN, GLOBAL_BLACKLIST_N_LETTER_WORDS_EN, HISTORY_LENGTH,
-                    LOGGER_NAME_COMMON_COG, RELIABLE_ROLE_ACCURACY_THRESHOLD, RELIABLE_ROLE_KARMA_THRESHOLD, USER_AGENT,
-                    GameMode)
+                    LOGGER_NAME_COMMON_COG, RELIABLE_ROLE_ACCURACY_THRESHOLD, RELIABLE_ROLE_KARMA_THRESHOLD, SETTINGS,
+                    USER_AGENT, GameMode)
 from language import Language, LanguageInfo
 from model import BlacklistModel, MemberModel, ServerConfig, ServerConfigModel, WhitelistModel, WordCacheModel
 
@@ -123,6 +123,7 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
         - sending a message with the last word
           - if there were messages sent after the last word that were potentially not registered
           - or if the last message is unavailable
+          - but not if the trigger message continues the known chain, it is processed against it instead
         - setting the rejoin cutoff to the sent message, so older messages are not processed anymore
         - marking server as ready which is a precondition for further messages being processed
 
@@ -139,6 +140,17 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
             except discord.errors.HTTPException:
                 continue
 
+            state = config.game_state[game_mode]
+
+            # a trigger message that continues the known chain is processed against it, even if messages were missed
+            if (trigger_message is not None and trigger_message.channel.id == channel.id and
+                    (not state.current_word or
+                     trigger_message.content.lower()[:game_mode.value] == state.current_word[-game_mode.value:]) and
+                    (SETTINGS.single_player or trigger_message.author.id != state.last_member_id)):
+                logger.debug(f'Skipped rejoin message for {guild.name} ({guild.id}) in game mode {game_mode}, '
+                             f'trigger message continues the chain')
+                continue
+
             try:
                 if trigger_message is not None and trigger_message.channel.id == channel.id:
                     # the trigger message is the latest message itself, so the one before it has to match the state
@@ -147,8 +159,8 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
                 else:
                     reference_message = await channel.fetch_message(channel.last_message_id)
                 if (reference_message and
-                        reference_message.author.id == config.game_state[game_mode].last_member_id and
-                        reference_message.content.lower() == config.game_state[game_mode].current_word):
+                        reference_message.author.id == state.last_member_id and
+                        reference_message.content.lower() == state.current_word):
                     logger.debug(f'Skipped rejoin message for {guild.name} ({guild.id}) in game mode {game_mode}')
                     continue
             except discord.errors.HTTPException:
@@ -157,16 +169,16 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
             emb: discord.Embed = discord.Embed(description=main_description,
                                                colour=discord.Color.brand_green())
 
-            if config.game_state[game_mode].high_score > 0:
-                emb.description += f'\n\n:fire: Let\'s beat the high score of {config.game_state[game_mode].high_score}! :fire:\n'
+            if state.high_score > 0:
+                emb.description += f'\n\n:fire: Let\'s beat the high score of {state.high_score}! :fire:\n'
 
-            if config.game_state[game_mode].current_word:
-                emb.add_field(name='Last valid word', value=f'{config.game_state[game_mode].current_word}', inline=True)
-                token = config.game_state[game_mode].current_word[-game_mode.value:]
+            if state.current_word:
+                emb.add_field(name='Last valid word', value=f'{state.current_word}', inline=True)
+                token = state.current_word[-game_mode.value:]
                 emb.description += f'Continue with a word starting with `{token}`\n'
 
-                if config.game_state[game_mode].last_member_id:
-                    member: Optional[discord.Member] = channel.guild.get_member(config.game_state[game_mode].last_member_id)
+                if state.last_member_id:
+                    member: Optional[discord.Member] = channel.guild.get_member(state.last_member_id)
                     if member:
                         emb.add_field(name='Last input by', value=f'{member.mention}', inline=True)
 
