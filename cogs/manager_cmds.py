@@ -633,13 +633,14 @@ to the other game mode!''')
                 return []
             config = self.cog.common.server_configs[guild.id]
             already_assigned_languages = config.languages
-            values = [l.value.code for l in Language if l.value.code.startswith(value.lower()) and l not in already_assigned_languages][:25]
-            return [Choice[str](name=v, value=v) for v in values]
+            languages = [l for l in Language if l not in already_assigned_languages and
+                         (l.value.code.startswith(value.lower()) or l.display_name.lower().startswith(value.lower()))][:25]
+            return [Choice[str](name=f'{l.display_name} ({l.value.code})', value=l.value.code) for l in languages]
 
         @app_commands.command(name='add', description="Add a new language")
-        @app_commands.describe(language_code="The language code")
-        @app_commands.autocomplete(language_code=_autocomplete_add_language)
-        async def add(self, interaction: Interaction, language_code: str) -> None:
+        @app_commands.describe(language="The language code or name")
+        @app_commands.autocomplete(language=_autocomplete_add_language)
+        async def add(self, interaction: Interaction, language: str) -> None:
             await interaction.response.defer()
 
             guild = interaction.guild
@@ -649,9 +650,9 @@ to the other game mode!''')
             embed: Embed = Embed(title='Add new language', colour=Colour.green())
 
             try:
-                language = Language.from_language_code(language_code.lower())
+                parsed_language = Language.from_language_code_or_name(language.lower())
             except ValueError:
-                embed.description = f'❌ Invalid language code. Please use the codes as stated in `/language show-all`.'
+                embed.description = f'❌ Invalid language code or name. Please use the codes as stated in `/language show-all`.'
                 embed.colour = Colour.red()
 
                 await interaction.followup.send(embed=embed)
@@ -659,8 +660,8 @@ to the other game mode!''')
 
             await self.cog.common.ensure_config(guild)
             config = self.cog.common.server_configs[guild.id]
-            if language in config.languages:
-                embed.description = f'''✅ *{language.display_name}* is **already enabled** in this server.\n
+            if parsed_language in config.languages:
+                embed.description = f'''✅ *{parsed_language.display_name}* is **already enabled** in this server.\n
 {self.cog.common.get_current_languages_string(self.cog.common, guild.id)}'''
                 embed.colour = Colour.green()
 
@@ -675,12 +676,12 @@ to the other game mode!''')
                 await interaction.followup.send(embed=embed)
                 return
 
-            config.languages.append(language)
+            config.languages.append(parsed_language)
             async with self.cog.bot.db_connection() as connection:
                 await config.sync_to_db_with_connection(connection)
                 await connection.commit()
 
-            embed.description = f'''✅ *{language.display_name}* has been enabled for this server.\n
+            embed.description = f'''✅ *{parsed_language.display_name}* has been enabled for this server.\n
 {self.cog.common.get_current_languages_string(self.cog.common, guild.id)}'''
             embed.colour = Colour.green()
 
@@ -694,13 +695,14 @@ to the other game mode!''')
                 return []
             config = self.cog.common.server_configs[guild.id]
             available_languages = config.languages
-            values = [l.value.code for l in available_languages if l.value.code.startswith(value.lower())][:25]
-            return [Choice[str](name=v, value=v) for v in values]
+            languages = [l for l in available_languages if l.value.code.startswith(value.lower())
+                         or l.display_name.lower().startswith(value.lower())][:25]
+            return [Choice[str](name=f'{l.display_name} ({l.value.code})', value=l.value.code) for l in languages]
 
         @app_commands.command(name='remove', description="Remove a language")
-        @app_commands.describe(language_code="The language code")
-        @app_commands.autocomplete(language_code=_autocomplete_remove_language)
-        async def remove(self, interaction: Interaction, language_code: str) -> None:
+        @app_commands.describe(language="The language code or name")
+        @app_commands.autocomplete(language=_autocomplete_remove_language)
+        async def remove(self, interaction: Interaction, language: str) -> None:
             await interaction.response.defer()
 
             guild = interaction.guild
@@ -710,9 +712,9 @@ to the other game mode!''')
             embed: Embed = Embed(title='Remove language')
 
             try:
-                language = Language.from_language_code(language_code.lower())
+                parsed_language = Language.from_language_code_or_name(language.lower())
             except ValueError:
-                embed.description = f'❌ Invalid language code.\nPlease use the codes as stated in `/language show-all`.'
+                embed.description = f'❌ Invalid language code or name.\nPlease use the codes as stated in `/language show-all`.'
                 embed.colour = Colour.red()
 
                 await interaction.followup.send(embed=embed)
@@ -728,20 +730,20 @@ to the other game mode!''')
                 await interaction.followup.send(embed=embed)
                 return
 
-            if language not in config.languages:
-                embed.description = f'''✅ *{language.display_name}* is **not enabled** in this server.
+            if parsed_language not in config.languages:
+                embed.description = f'''✅ *{parsed_language.display_name}* is **not enabled** in this server.
 \n{self.cog.common.get_current_languages_string(self.cog.common, guild.id)}'''
                 embed.colour = Colour.green()
                 await interaction.followup.send(embed=embed)
                 return
 
-            config.languages.remove(language)
+            config.languages.remove(parsed_language)
 
             async with self.cog.bot.db_connection() as connection:
                 await config.sync_to_db_with_connection(connection)
                 await connection.commit()
 
-            embed.description = f'''✅ *{language.display_name}* has been disabled for this server.\n
+            embed.description = f'''✅ *{parsed_language.display_name}* has been disabled for this server.\n
 {self.cog.common.get_current_languages_string(self.cog.common, guild.id)}'''
             embed.colour = Colour.green()
 
