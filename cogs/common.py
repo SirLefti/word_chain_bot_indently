@@ -88,8 +88,9 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
         """
         Ensures that given guild is ready, performs the rejoin if it is not.
 
-        If `trigger_message` is given, it is the message that caused this call. It is not considered as a missed
-        message, so it does not cause an online message on its own.
+        If `trigger_message` is given, it is the message that caused this call. If it continues the chain, a rejoin
+        message is skipped, and the game continues as usual. If it does not, a warning message is sent.
+
         Callers must not hold a DB connection, because the rejoin may take a while due to API calls.
         """
         if guild.id in self.servers_ready:
@@ -107,8 +108,8 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
 
     def is_before_rejoin_cutoff(self, message: discord.Message) -> bool:
         """
-        Checks if the message was sent before the online message of a rejoin in its channel. Those messages are based on
-        an outdated chain and must not be processed.
+        Checks if the message was sent before the online message or the warning of a rejoin in its channel. Those
+        messages are based on an outdated chain and must not be processed.
         """
         return message.id < self.rejoin_cutoffs.get(message.channel.id, 0)
 
@@ -124,6 +125,7 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
           - if there were messages sent after the last word that were potentially not registered
           - or if the last message is unavailable
           - but not if the trigger message continues the known chain, it is processed against it instead
+            - if it does not continue the known chain, a warning message is sent instead
         - setting the rejoin cutoff to the sent message, so older messages are not processed anymore
         - marking server as ready which is a precondition for further messages being processed
 
@@ -165,6 +167,24 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
                     continue
             except discord.errors.HTTPException:
                 pass
+
+            if trigger_message is not None and trigger_message.channel.id == channel.id:
+                # a play attempt gets a warning like other inputs that are not taken into account, not an online message
+                if state.current_word:
+                    # the mention shows the name without a member lookup, it does not ping due to the allowed mentions
+                    last_member = f' by <@{state.last_member_id}>' if state.last_member_id else ''
+                    continuation = (f'Please continue with a word starting with '
+                                    f'**{state.current_word[-game_mode.value:]}** '
+                                    f'(last valid word: *{state.current_word}*{last_member}).')
+                else:
+                    continuation = 'Please enter another word.'
+                await self.add_reaction(trigger_message, '⚠️')
+                warning_message = await self.send_message_to_channel(channel, f'''I have just restarted and may have missed \
+some messages, so your word has **not** been taken into account.
+The chain has **not** been broken. {continuation}''', discord.AllowedMentions.none())
+                # the trigger message must be dropped anyway, even if the warning could not be sent
+                self.rejoin_cutoffs[channel.id] = warning_message.id if warning_message else trigger_message.id + 1
+                continue
 
             emb: discord.Embed = discord.Embed(description=main_description,
                                                colour=discord.Color.brand_green())
@@ -331,6 +351,54 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
         if rejoin_config is not None:
             async with self.rejoin_locks[guild.id]:
                 await self._rejoin(rejoin_config, guild, '**Welcome back!**')
+
+    # ---------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    async def add_reaction(message: discord.Message, emoji: str | discord.Emoji | discord.PartialEmoji) -> None:
+        """
+        Adds the reaction to the given message, with error handling for missing permissions.
+
+        Parameters
+        ----------
+        message : discord.Message
+            The message to add the reaction to.
+        emoji : str | discord.Emoji | discord.PartialEmoji
+            The emoji to add.
+        """
+        try:
+            await message.add_reaction(emoji)
+        except discord.errors.Forbidden:
+            pass
+        except discord.errors.NotFound:
+            logger.warning("Failed to add reaction as message was not found.")
+
+    # ---------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    async def send_message_to_channel(channel: discord.abc.Messageable, content: str,
+                                      allowed_mentions: discord.AllowedMentions | None = None) -> discord.Message | None:
+        """
+        Sends a message to the given channel, with error handling for missing permissions.
+
+        Parameters
+        ----------
+        channel : discord.TextChannel
+            The channel to send the message to.
+        content : str
+            The content of the message.
+        allowed_mentions : discord.AllowedMentions | None
+            The mentions that are allowed to ping, or None to use the default of the bot.
+
+        Returns
+        -------
+        discord.Message | None
+            The sent message, or None if it could not be sent.
+        """
+        try:
+            return await channel.send(content, allowed_mentions=allowed_mentions)
+        except discord.errors.Forbidden:
+            return None
 
     # ---------------------------------------------------------------------------------------------------------------
 

@@ -122,16 +122,16 @@ class GameCog(Cog, name=COG_NAME_GAME):
 
         if message.channel.id == config.game_state[GameMode.NORMAL].channel_id:
             if config.game_state[GameMode.NORMAL].current_word:
-                await self.send_message_to_channel(message.channel, f'{message.author.mention} edited their word! '
+                await self.common.send_message_to_channel(message.channel, f'{message.author.mention} edited their word! '
                                                                             f'The **last** word was **{config.game_state[GameMode.NORMAL].current_word}**.')
             else:
-                await self.send_message_to_channel(message.channel, f'{message.author.mention} edited their word!')
+                await self.common.send_message_to_channel(message.channel, f'{message.author.mention} edited their word!')
         elif message.channel.id == config.game_state[GameMode.HARD].channel_id:
             if config.game_state[GameMode.HARD].current_word:
-                await self.send_message_to_channel(message.channel, f'{message.author.mention} edited their word! '
+                await self.common.send_message_to_channel(message.channel, f'{message.author.mention} edited their word! '
                                                                             f'The **last** word was **{config.game_state[GameMode.HARD].current_word}**.')
             else:
-                await self.send_message_to_channel(message.channel, f'{message.author.mention} edited their word!')
+                await self.common.send_message_to_channel(message.channel, f'{message.author.mention} edited their word!')
 
     # ----------------------------------------------------------------------------------------------------------------
 
@@ -171,16 +171,16 @@ class GameCog(Cog, name=COG_NAME_GAME):
 
         if before.channel.id == config.game_state[GameMode.NORMAL].channel_id:
             if config.game_state[GameMode.NORMAL].current_word:
-                await self.send_message_to_channel(after.channel, f'{after.author.mention} edited their word! '
+                await self.common.send_message_to_channel(after.channel, f'{after.author.mention} edited their word! '
                                                                           f'The **last** word was **{config.game_state[GameMode.NORMAL].current_word}**.')
             else:
-                await self.send_message_to_channel(after.channel, f'{after.author.mention} edited their word!')
+                await self.common.send_message_to_channel(after.channel, f'{after.author.mention} edited their word!')
         elif before.channel.id == config.game_state[GameMode.HARD].channel_id:
             if config.game_state[GameMode.HARD].current_word:
-                await self.send_message_to_channel(after.channel, f'{after.author.mention} edited their word! '
+                await self.common.send_message_to_channel(after.channel, f'{after.author.mention} edited their word! '
                                                                           f'The **last** word was **{config.game_state[GameMode.HARD].current_word}**.')
             else:
-                await self.send_message_to_channel(after.channel, f'{after.author.mention} edited their word!')
+                await self.common.send_message_to_channel(after.channel, f'{after.author.mention} edited their word!')
 
     # ---------------------------------------------------------------------------------------------------------------
 
@@ -237,8 +237,8 @@ class GameCog(Cog, name=COG_NAME_GAME):
         # Check word length
         # --------------------
         if len(word) == 1:
-            await self.add_reaction(message, '⚠️')
-            await self.send_message_to_channel(message.channel, f'''Single-letter inputs are no longer accepted.
+            await self.common.add_reaction(message, '⚠️')
+            await self.common.send_message_to_channel(message.channel, f'''Single-letter inputs are no longer accepted.
 The chain has **not** been broken. Please enter another word.''')
             return
 
@@ -248,8 +248,8 @@ The chain has **not** been broken. Please enter another word.''')
         if not valid_languages:
             if not any(c.isspace() for c in word):
                 # in this case, we have a single word, that did not match any of the configured language regex patterns
-                await self.add_reaction(message, '⚠️')
-                await self.send_message_to_channel(message.channel, f'''Your word is not a valid word in any of your configured languages.
+                await self.common.add_reaction(message, '⚠️')
+                await self.common.send_message_to_channel(message.channel, f'''Your word is not a valid word in any of your configured languages.
 The chain has **not** been broken. Please enter another word.''')
             return
 
@@ -311,8 +311,8 @@ The chain has **not** been broken. Please enter another word.''')
         query_api: bool = not word_whitelisted and not matched_language
 
         if word_blacklisted:
-            await self.add_reaction(message, '⚠️')
-            await self.send_message_to_channel(message.channel, f'''This word has been **blacklisted**. Please do not use it.
+            await self.common.add_reaction(message, '⚠️')
+            await self.common.send_message_to_channel(message.channel, f'''This word has been **blacklisted**. Please do not use it.
 The chain has **not** been broken. Please enter another word.''')
             return
 
@@ -390,8 +390,8 @@ Restart and try to beat the current high score of **{config.game_state[game_mode
                     return
 
                 elif query_result_code == ApiResponse.ERROR:
-                    await self.add_reaction(message, '⚠️')
-                    await self.send_message_to_channel(message.channel, ''':octagonal_sign: There was an issue in the backend.
+                    await self.common.add_reaction(message, '⚠️')
+                    await self.common.send_message_to_channel(message.channel, ''':octagonal_sign: There was an issue in the backend.
 The above entered word is **NOT** being taken into account.''')
                     return
 
@@ -409,8 +409,8 @@ The above entered word is **NOT** being taken into account.''')
                 word_already_used = result.scalar()
 
             if word_already_used:
-                await self.add_reaction(message, '⚠️')
-                await self.send_message_to_channel(message.channel, f'''The word *{word}* has already been used before. \
+                await self.common.add_reaction(message, '⚠️')
+                await self.common.send_message_to_channel(message.channel, f'''The word *{word}* has already been used before. \
 The chain has **not** been broken.
 Please enter another word.''')
                 return
@@ -419,8 +419,8 @@ Please enter another word.''')
             # Check word score
             # --------------------
             if all(language.value.score_threshold[game_mode] > self.calculate_word_score(word, game_mode, language) for language in server_languages):
-                await self.add_reaction(message, '⚠️')
-                await self.send_message_to_channel(message.channel, f'''Your word has no or just few words to continue with.
+                await self.common.add_reaction(message, '⚠️')
+                await self.common.send_message_to_channel(message.channel, f'''Your word has no or just few words to continue with.
 The chain has **not** been broken. Please enter another word.\n
 -# If you think this is wrong, please let us know on our support server.''')
                 return
@@ -432,7 +432,7 @@ The chain has **not** been broken. Please enter another word.\n
                                   member_id=message.author.id,
                                   current_word=word)
 
-            await self.add_reaction(message, config.reaction_emoji(game_mode))
+            await self.common.add_reaction(message, config.reaction_emoji(game_mode))
 
             last_words: deque[str] = self.common.server_histories[server_id][message.author.id][game_mode]
             # fallback to first configured language if matched_language is unavailable (e.g. matched by whitelist)
@@ -472,7 +472,7 @@ The chain has **not** been broken. Please enter another word.\n
             current_count = config.game_state[game_mode].current_count
 
             if current_count > 0 and current_count % 100 == 0:
-                await self.send_message_to_channel(message.channel, f'{current_count} words! Nice work, keep it up!')
+                await self.common.send_message_to_channel(message.channel, f'{current_count} words! Nice work, keep it up!')
 
             async with self.bot.db_connection(locked=False) as connection:
                 await self.common.add_remove_reliable_role(message.guild, connection)
@@ -489,8 +489,8 @@ The chain has **not** been broken. Please enter another word.\n
         # no ensure_config needed here, this is already done in the upper call frame
         config = self.common.server_configs[server_id]
 
-        await self.send_message_to_channel(message.channel, response)
-        await self.add_reaction(message, '❌')
+        await self.common.send_message_to_channel(message.channel, response)
+        await self.common.add_reaction(message, '❌')
 
         async with self.bot.db_connection() as connection:
             if self.common.server_failed_roles[server_id]:
@@ -518,46 +518,6 @@ The chain has **not** been broken. Please enter another word.\n
             await config.sync_to_db_with_connection(connection)
 
             await connection.commit()
-
-    # ---------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    async def add_reaction(message: discord.Message, emoji: str | discord.Emoji | discord.PartialEmoji) -> None:
-        """
-        Adds the reaction to the given message, with error handling for missing permissions.
-
-        Parameters
-        ----------
-        message : discord.Message
-            The message to add the reaction to.
-        emoji : str | discord.Emoji | discord.PartialEmoji
-            The emoji to add.
-        """
-        try:
-            await message.add_reaction(emoji)
-        except discord.errors.Forbidden:
-            pass
-        except discord.errors.NotFound:
-            logger.warning("Failed to add reaction as message was not found.")
-
-    # ---------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    async def send_message_to_channel(channel: discord.abc.Messageable, content: str) -> None:
-        """
-        Sends a message to the given channel, with error handling for missing permissions.
-
-        Parameters
-        ----------
-        channel : discord.TextChannel
-            The channel to send the message to.
-        content : str
-            The content of the message.
-        """
-        try:
-            await channel.send(content)
-        except discord.errors.Forbidden:
-            pass
 
     # ---------------------------------------------------------------------------------------------------------------
 
