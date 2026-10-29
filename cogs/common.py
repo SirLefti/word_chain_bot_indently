@@ -198,9 +198,7 @@ The chain has **not** been broken. {continuation}''', discord.AllowedMentions.no
                 emb.description += f'Continue with a word starting with `{token}`\n'
 
                 if state.last_member_id:
-                    member: Optional[discord.Member] = channel.guild.get_member(state.last_member_id)
-                    if member:
-                        emb.add_field(name='Last input by', value=f'{member.mention}', inline=True)
+                    emb.add_field(name='Last input by', value=f'<@{state.last_member_id}>', inline=True)
 
             emb.add_field(name='Game mode', value=f'{game_mode.display_name} Mode', inline=True)
 
