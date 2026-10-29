@@ -52,8 +52,8 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
         self.server_histories: dict[int, dict[int, dict[GameMode, deque[str]]]] = defaultdict(
             lambda: defaultdict(lambda: defaultdict(lambda: deque(maxlen=HISTORY_LENGTH))))
 
-        # servers with completed rejoin: no messages were missed, or the online message was sent, plus new servers
-        self.servers_ready: set[int] = set()
+        # (server_id, game_mode) with completed rejoin: no messages were missed, or the online/warning message was sent, plus new servers
+        self.games_ready: set[tuple[int, GameMode]] = set()
         # ensures that only one rejoin per guild runs at once (restart rejoin, on-demand rejoin, guild join)
         self.rejoin_locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
         # maps from channel_id -> id of the online message sent on rejoin, older messages must not be processed
@@ -84,25 +84,37 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
 
     # ---------------------------------------------------------------------------------------------------------------
 
-    async def ensure_ready(self, guild: discord.Guild, trigger_message: discord.Message | None = None) -> None:
+    async def ensure_ready(self, guild: discord.Guild, game_modes: list[GameMode],
+                           trigger_message: discord.Message | None = None) -> None:
         """
-        Ensures that given guild is ready, performs the rejoin if it is not.
+        Ensures that given game modes of given guild are ready, performs the rejoin for those that are not.
 
-        If `trigger_message` is given, it is the message that caused this call. If it continues the chain, a rejoin
-        message is skipped, and the game continues as usual. If it does not, a warning message is sent.
+        If `trigger_message` is given, it is the message that caused this call, and `game_modes` must only contain the
+        game mode of its channel. If it continues the chain, a rejoin message is skipped, and the game continues as
+        usual. If it does not, a warning message is sent.
 
         Callers must not hold a DB connection, because the rejoin may take a while due to API calls.
         """
-        if guild.id in self.servers_ready:
+        if all((guild.id, game_mode) in self.games_ready for game_mode in game_modes):
             return
 
         async with self.rejoin_locks[guild.id]:
             # another message or the restart rejoin may have completed the rejoin while waiting for the lock
-            if guild.id in self.servers_ready:
+            pending_game_modes = [game_mode for game_mode in game_modes if (guild.id, game_mode) not in self.games_ready]
+            if not pending_game_modes:
                 return
 
             await self.ensure_config(guild)
-            await self._rejoin(self.server_configs[guild.id], guild, '**I\'m now online!**', trigger_message)
+            await self._rejoin(self.server_configs[guild.id], guild, '**I\'m now online!**', pending_game_modes,
+                               trigger_message)
+
+    # ---------------------------------------------------------------------------------------------------------------
+
+    def is_ready(self, guild_id: int, game_mode: GameMode) -> bool:
+        """
+        Checks if the rejoin for given game mode of given guild has been completed.
+        """
+        return (guild_id, game_mode) in self.games_ready
 
     # ---------------------------------------------------------------------------------------------------------------
 
@@ -116,9 +128,9 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
     # ---------------------------------------------------------------------------------------------------------------
 
     async def _rejoin(self, config: ServerConfig, guild: discord.Guild, main_description: str,
-                      trigger_message: discord.Message | None = None) -> None:
+                      game_modes: list[GameMode], trigger_message: discord.Message | None = None) -> None:
         """
-        Handles the complete workflow of making a guild ready.
+        Handles the complete workflow of making given game modes of a guild ready.
         This includes:
         - loading discord roles
         - sending a message with the last word
@@ -127,13 +139,13 @@ class CommonCog(Cog, name=COG_NAME_COMMON):
           - but not if the trigger message continues the known chain, it is processed against it instead
             - if it does not continue the known chain, a warning message is sent instead
         - setting the rejoin cutoff to the sent message, so older messages are not processed anymore
-        - marking server as ready which is a precondition for further messages being processed
+        - marking the game modes as ready which is a precondition for further messages being processed
 
         Must be called with the rejoin lock of the guild being held.
         """
         self.load_discord_roles(guild)
 
-        for game_mode in GameMode:
+        for game_mode in game_modes:
             try:
                 channel = self.bot.get_channel(config.game_state[game_mode].channel_id)
                 # make sure we have a TextChannel that is not None and that has a last message id
@@ -208,8 +220,7 @@ The chain has **not** been broken. {continuation}''', discord.AllowedMentions.no
             except discord.errors.HTTPException:
                 logger.info(f'Could not send ready message to {guild.name} ({guild.id}) due to missing permissions.')
 
-
-        self.servers_ready.add(guild.id)
+        self.games_ready.update((guild.id, game_mode) for game_mode in game_modes)
 
     # ---------------------------------------------------------------------------------------------------------------
 
@@ -234,7 +245,7 @@ The chain has **not** been broken. {continuation}''', discord.AllowedMentions.no
                 stmt = insert(ServerConfigModel).values(**new_config.to_sqlalchemy_dict())
                 await _connection.execute(stmt)
                 self.server_configs[new_config.server_id] = new_config
-                self.servers_ready.add(new_config.server_id)
+                self.games_ready.update((new_config.server_id, game_mode) for game_mode in GameMode)
                 logger.warning(f'ensure_config for guild {_guild_id}: new config created')
                 logger.warning(f'trace: {caller_function_name} at {caller_filename}:{caller_lineno} for {guild.id} (shard {guild.shard_id})')
             except SQLAlchemyError as e:
@@ -289,13 +300,13 @@ The chain has **not** been broken. {continuation}''', discord.AllowedMentions.no
         if perform_rejoin:
             for (index, guild) in enumerate(self.bot.guilds, start=1):
                 try:
-                    await self.ensure_ready(guild)
+                    await self.ensure_ready(guild, list(GameMode))
                 except Exception:  # noqa: catch all exceptions here to allow to continue with other guilds
                     logger.exception(f'Rejoin failed for {guild.name} ({guild.id})')
                 if index % 100 == 0 or index == len(self.bot.guilds):
                     logger.info(f'{index}/{len(self.bot.guilds)} guilds ready')
         else:
-            self.servers_ready = {g.id for g in self.bot.guilds}
+            self.games_ready = {(g.id, game_mode) for g in self.bot.guilds for game_mode in GameMode}
 
         await self.bot.change_presence(status=discord.Status.online)
         logger.info(f'Loaded {len(self.server_configs)} server configs, running on {len(self.bot.guilds)} servers')
@@ -315,7 +326,7 @@ The chain has **not** been broken. {continuation}''', discord.AllowedMentions.no
 
         if guild.id in self.server_configs:
             async with self.rejoin_locks[guild.id]:
-                await self._rejoin(self.server_configs[guild.id], guild, '**Welcome back!**')
+                await self._rejoin(self.server_configs[guild.id], guild, '**Welcome back!**', list(GameMode))
             logger.info(f'Config already present for {guild.name} ({guild.id})')
             return
 
@@ -328,7 +339,7 @@ The chain has **not** been broken. {continuation}''', discord.AllowedMentions.no
                 await connection.execute(stmt)
                 await connection.commit()
                 self.server_configs[new_config.server_id] = new_config
-                self.servers_ready.add(guild.id)
+                self.games_ready.update((guild.id, game_mode) for game_mode in GameMode)
                 logger.info(f'Config created for guild {guild.name} ({guild.id})')
             except SQLAlchemyError as e:
                 if 'UNIQUE constraint failed' in str(e):
@@ -348,7 +359,7 @@ The chain has **not** been broken. {continuation}''', discord.AllowedMentions.no
 
         if rejoin_config is not None:
             async with self.rejoin_locks[guild.id]:
-                await self._rejoin(rejoin_config, guild, '**Welcome back!**')
+                await self._rejoin(rejoin_config, guild, '**Welcome back!**', list(GameMode))
 
     # ---------------------------------------------------------------------------------------------------------------
 
@@ -986,8 +997,12 @@ The chain has **not** been broken. {continuation}''', discord.AllowedMentions.no
         items = []
         guild = bot_member.guild
 
-        items.append(f'Guild status ready: {'✅' if guild.id in self.servers_ready else 
-            '❌ (the bot gets ready on the next word in a game channel, or when the startup rejoin reaches this server)'}\n')
+        ready_messages = [f'{game_mode.name}: {'✅' if self.is_ready(guild.id, game_mode) else '❌'}'
+                          for game_mode in GameMode]
+        if not all(self.is_ready(guild.id, game_mode) for game_mode in GameMode):
+            ready_messages.append('(a game mode gets ready on the next word in its channel, '
+                                  'or when the startup rejoin reaches this server)')
+        items.append('Game status ready:\n' + '\n'.join(ready_messages) + '\n')
 
         def permission_check_strings(permissions: Permissions) -> list[str]:
             return [f'Can view channels: {'✅' if permissions.view_channel else '❌'}',

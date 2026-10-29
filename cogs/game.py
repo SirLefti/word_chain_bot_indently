@@ -81,10 +81,9 @@ class GameCog(Cog, name=COG_NAME_GAME):
 
         await self.common.ensure_config(message.guild)
         config = self.common.server_configs[server_id]
-        if message.channel.id == config.game_state[GameMode.NORMAL].channel_id:
-            await self.on_message_for_word_chain(message, GameMode.NORMAL)
-        elif message.channel.id == config.game_state[GameMode.HARD].channel_id:
-            await self.on_message_for_word_chain(message, GameMode.HARD)
+        game_mode = config.game_mode_by_channel(message.channel.id)
+        if game_mode is not None:
+            await self.on_message_for_word_chain(message, game_mode)
 
     # ----------------------------------------------------------------------------------------------------------------
 
@@ -104,34 +103,26 @@ class GameCog(Cog, name=COG_NAME_GAME):
         if not message.guild:
             return
 
-        # the rejoin is only triggered by new words, events for guilds that are not ready yet are skipped
-        if message.guild.id not in self.common.servers_ready:
-            return
-
         await self.common.ensure_config(message.guild)
         config = self.common.server_configs[message.guild.id]
 
         # Check if the message is in the channel
-        if message.channel.id not in (config.game_state[GameMode.NORMAL].channel_id,
-                                      config.game_state[GameMode.HARD].channel_id):
+        game_mode = config.game_mode_by_channel(message.channel.id)
+        if game_mode is None:
+            return
+        # the rejoin is only triggered by new words, events for game modes that are not ready yet are skipped
+        if not self.common.is_ready(message.guild.id, game_mode):
             return
         if not message.reactions:
             return
         if not any(self.common.word_matches_pattern(message.content, language.value) for language in config.languages):
             return
 
-        if message.channel.id == config.game_state[GameMode.NORMAL].channel_id:
-            if config.game_state[GameMode.NORMAL].current_word:
-                await self.common.send_message_to_channel(message.channel, f'{message.author.mention} edited their word! '
-                                                                            f'The **last** word was **{config.game_state[GameMode.NORMAL].current_word}**.')
-            else:
-                await self.common.send_message_to_channel(message.channel, f'{message.author.mention} edited their word!')
-        elif message.channel.id == config.game_state[GameMode.HARD].channel_id:
-            if config.game_state[GameMode.HARD].current_word:
-                await self.common.send_message_to_channel(message.channel, f'{message.author.mention} edited their word! '
-                                                                            f'The **last** word was **{config.game_state[GameMode.HARD].current_word}**.')
-            else:
-                await self.common.send_message_to_channel(message.channel, f'{message.author.mention} edited their word!')
+        if config.game_state[game_mode].current_word:
+            await self.common.send_message_to_channel(message.channel, f'{message.author.mention} edited their word! '
+                                                                       f'The **last** word was **{config.game_state[game_mode].current_word}**.')
+        else:
+            await self.common.send_message_to_channel(message.channel, f'{message.author.mention} edited their word!')
 
     # ----------------------------------------------------------------------------------------------------------------
 
@@ -151,16 +142,15 @@ class GameCog(Cog, name=COG_NAME_GAME):
         if not before.guild:
             return
 
-        # the rejoin is only triggered by new words, events for guilds that are not ready yet are skipped
-        if before.guild.id not in self.common.servers_ready:
-            return
-
         await self.common.ensure_config(before.guild)
         config = self.common.server_configs[before.guild.id]
 
         # Check if the message is in the channel
-        if before.channel.id not in (config.game_state[GameMode.NORMAL].channel_id,
-                                     config.game_state[GameMode.HARD].channel_id):
+        game_mode = config.game_mode_by_channel(before.channel.id)
+        if game_mode is None:
+            return
+        # the rejoin is only triggered by new words, events for game modes that are not ready yet are skipped
+        if not self.common.is_ready(before.guild.id, game_mode):
             return
         if not before.reactions:
             return
@@ -169,18 +159,11 @@ class GameCog(Cog, name=COG_NAME_GAME):
         if before.content.lower() == after.content.lower():
             return
 
-        if before.channel.id == config.game_state[GameMode.NORMAL].channel_id:
-            if config.game_state[GameMode.NORMAL].current_word:
-                await self.common.send_message_to_channel(after.channel, f'{after.author.mention} edited their word! '
-                                                                          f'The **last** word was **{config.game_state[GameMode.NORMAL].current_word}**.')
-            else:
-                await self.common.send_message_to_channel(after.channel, f'{after.author.mention} edited their word!')
-        elif before.channel.id == config.game_state[GameMode.HARD].channel_id:
-            if config.game_state[GameMode.HARD].current_word:
-                await self.common.send_message_to_channel(after.channel, f'{after.author.mention} edited their word! '
-                                                                          f'The **last** word was **{config.game_state[GameMode.HARD].current_word}**.')
-            else:
-                await self.common.send_message_to_channel(after.channel, f'{after.author.mention} edited their word!')
+        if config.game_state[game_mode].current_word:
+            await self.common.send_message_to_channel(after.channel, f'{after.author.mention} edited their word! '
+                                                                     f'The **last** word was **{config.game_state[game_mode].current_word}**.')
+        else:
+            await self.common.send_message_to_channel(after.channel, f'{after.author.mention} edited their word!')
 
     # ---------------------------------------------------------------------------------------------------------------
 
@@ -207,7 +190,7 @@ class GameCog(Cog, name=COG_NAME_GAME):
         server_id = message.guild.id
 
         # performs the rejoin if this is the first message since the restart, must happen before any lock is acquired
-        await self.common.ensure_ready(message.guild, message)
+        await self.common.ensure_ready(message.guild, [game_mode], message)
         # return early if the message was sent before the last rejoin message (potentially sent in ensure_ready)
         if self.common.is_before_rejoin_cutoff(message):
             return
